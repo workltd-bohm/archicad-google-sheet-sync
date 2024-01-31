@@ -1,0 +1,19 @@
+{
+  "name": "google-sheet-schedule-sync",
+  "version": "1.0.0",
+  "description": "Synchronise schedule data to Google Sheet",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Allen Mak",
+  "license": "ISC",
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.10",
+    "google-auth-library": "^9.2.0",
+    "googleapis": "^128.0.0",
+    "xmlbuilder2": "^3.1.1",
+    "xpath": "^0.0.34"
+  }
+}
