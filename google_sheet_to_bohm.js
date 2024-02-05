@@ -3,35 +3,12 @@ import { GoogleAuth } from 'google-auth-library';
 import { google } from 'googleapis';
 import { create } from 'xmlbuilder2';
 import { readFileSync, writeFileSync } from 'fs';
+import { configCorePtyMap, configCustomPtyMap } from './common.js';
 // import { sheets } from 'googleapis/build/src/apis/sheets/index.js';
 import os from 'os';
 
-import { DOMParser } from '@xmldom/xmldom'
-import { select, select1 } from 'xpath';
-
 process.env["GOOGLE_APPLICATION_CREDENTIALS"] = `${homedir()}/bohm/service-account-token.json`;
 
-const configData = readFileSync(homedir() + '/bohm/add-on-config.xml', 'utf8');
-const configXmlDoc = new DOMParser().parseFromString(configData, 'text/xml');
-
-let configCorePtyGroupList = [];
-
-for (const corePtyNode of select("/configuration/property-groups/core", configXmlDoc)) {
-    configCorePtyGroupList.push(select1("@name", corePtyNode).value);
-}
-
-let configCustomPtyGroupList = [];
-
-for (const customPtyNode of select("/configuration/property-groups/custom", configXmlDoc)) {
-    configCustomPtyGroupList.push(select1("@name", customPtyNode).value);
-}
-
-let configClassGpPtyMap = {};
-
-for (const mappingNode of select("/configuration/classification-group-custom-property-group-mapping/mapping", configXmlDoc)) {
-    configClassGpPtyMap[select1("@classification-group", mappingNode).value] =
-        select1("@property-group", mappingNode).value;
-}
 
 async function getElementPropertiesEntries(service, googlesheetId, sheetName) {
     const result = await service.values.get({
@@ -79,11 +56,11 @@ async function parseImportData(sheetData) {
 
     let sheetIdx = 2;
 
-    for (const corePtyGroupName of configCorePtyGroupList) {
+    for (const corePtyGroupName of Object.keys(configCorePtyMap)) {
         elementCorePropertiesEntries[corePtyGroupName] = sheetData[sheetIdx++];
     }
 
-    for (const customPtyGroupName of configCustomPtyGroupList) {
+    for (const customPtyGroupName of Object.keys(configCustomPtyMap)) {
         elementCustomPropertyEntries[customPtyGroupName] = sheetData[sheetIdx++];
     }
 
@@ -96,7 +73,8 @@ async function parseImportData(sheetData) {
             guid: generalDatasheetRow[0],
             name: generalDatasheetRow[1],
             classification: generalDatasheetRow[2].split(' ')[0],
-            classificationGroup: generalDatasheetRow[3].split(' ')[0],
+            classificationGroupCode: generalDatasheetRow[3].split(' ')[0],
+            classificationGroupName: generalDatasheetRow[3].split(' ').slice(1).join(' '),
             corePropertyGroups: {},
             customPropertyGroups: {}
         };
@@ -118,7 +96,7 @@ async function parseImportData(sheetData) {
             if (datasheetRowIndex > -1) {
                 let row = elementCorePropertiesEntries[core_property_group_key].values[datasheetRowIndex];
 
-                for (let j = 1; j < row.length; j++) {
+                for (let j = 3; j < row.length; j++) {
                     if (row[j] != null && row[j].trim() != '') {
                         element.corePropertyGroups[core_property_group_key].push({
                             name: elementCorePropertiesEntries[core_property_group_key].headers[j],
@@ -131,10 +109,16 @@ async function parseImportData(sheetData) {
         // parse core properties.
 
         // parse custom properties.
-        const requiredCustomPtyGroupName = configClassGpPtyMap[element.classificationGroup];
+        const requiredCustomPtyGroupName = `${element.classificationGroupCode} ${element.classificationGroupName}`;
 
         for (let custom_property_group_key of Object.keys(elementCustomPropertyEntries)) {
+
+            console.log(`${custom_property_group_key} ----- ${requiredCustomPtyGroupName}`);
+
             if (requiredCustomPtyGroupName != custom_property_group_key) { continue; }
+
+            console.log(requiredCustomPtyGroupName);
+
             element.customPropertyGroups[custom_property_group_key] = [];
             let datasheetRowIndex = -1;
 
@@ -184,7 +168,7 @@ async function constructImportDataXml(scheduleObj) {
             "@guid": element.guid,
             "@name": element.name,
             classification: { "@code": element.classification },
-            "classification-group": { "@code": element.classificationGroup },
+            "classification-group": { "@code": element.classificationGroupCode },
             "property-groups": { core: [], custom: [] }
         };
 
@@ -232,12 +216,12 @@ async function main(googlesheetId) {
     functionList.push(() => getProjectMap(service, googlesheetId));
     functionList.push(() => getElementPropertiesEntries(service, googlesheetId, 'Element Name & Classification'));
 
-    for (const corePtyNode of select("/configuration/property-groups/core", configXmlDoc)) {
-        functionList.push(() => getElementPropertiesEntries(service, googlesheetId, select1("@name", corePtyNode).value));
+    for (const corePtyGpName of Object.keys(configCorePtyMap)) {
+        functionList.push(() => getElementPropertiesEntries(service, googlesheetId, corePtyGpName));
     }
 
-    for (const customPtyNode of select("/configuration/property-groups/custom", configXmlDoc)) {
-        functionList.push(() => getElementPropertiesEntries(service, googlesheetId, select1("@name", customPtyNode).value));
+    for (const customPtyGpName of Object.keys(configCustomPtyMap)) {
+        functionList.push(() => getElementPropertiesEntries(service, googlesheetId, customPtyGpName));
     }
 
     const result = await Promise.all(functionList.map(func => func()));
