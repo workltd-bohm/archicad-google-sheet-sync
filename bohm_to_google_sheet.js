@@ -4,7 +4,7 @@ import { google } from 'googleapis';
 import { DOMParser } from '@xmldom/xmldom'
 import { readFileSync } from 'fs';
 import { select, select1 } from 'xpath';
-import { configCorePtyMap, configCustomPtyMap, configClassGpCustomPtyGpMap, getSheet } from './common.js';
+import { configCorePtyMap, configCustomPtyMap, getSheet } from './common.js';
 
 process.env["GOOGLE_APPLICATION_CREDENTIALS"] = `${homedir()}/bohm/service-account-token.json`;
 
@@ -36,6 +36,8 @@ async function parseExportData(exportXmlDoc) {
     for (let corePtyGpName of Object.keys(configCorePtyMap)) {
         corePtyDatasheetSet[corePtyGpName] = { name: corePtyGpName, headers: [], values: [] };
         corePtyDatasheetSet[corePtyGpName].headers.push('Element GUID');
+        corePtyDatasheetSet[corePtyGpName].headers.push('Element Name');
+        corePtyDatasheetSet[corePtyGpName].headers.push('Classification');
 
         for (let corePtyName of configCorePtyMap[corePtyGpName]) {
             corePtyDatasheetSet[corePtyGpName].headers.push(corePtyName);
@@ -55,6 +57,7 @@ async function parseExportData(exportXmlDoc) {
         let elemClass = select1("classification", element);
         let elemClassGp = select1("classification-group", element);
         let elemClassGpCode = select1("@code", elemClassGp).value;
+        let elemClassGpName = select1("@name", elemClassGp).value;
         let elemLibPart = select1("library-part", element);
 
         generalDatasheet.values.push(
@@ -62,7 +65,7 @@ async function parseExportData(exportXmlDoc) {
                 select1("@guid", element).value,
                 select1("@name", element).value,
                 `${select1("@code", elemClass).value} ${select1("@name", elemClass).value}`,
-                `${elemClassGpCode} ${select1("@name", elemClassGp).value}`,
+                `${elemClassGpCode} ${elemClassGpName}`,
                 select1("@type", element).value,
                 select1("@variation", element).value,
                 select1("@documentName", elemLibPart).value,
@@ -75,27 +78,32 @@ async function parseExportData(exportXmlDoc) {
             corePtyDatasheetSet[corePtyGpName].values.push(Array(corePtyDatasheetSet[corePtyGpName].headers.length).fill(null));
             const corePtyDatasheetSetRowIdx = corePtyDatasheetSet[corePtyGpName].values.length - 1
             corePtyDatasheetSet[corePtyGpName].values[corePtyDatasheetSetRowIdx][0] = select1("@guid", element).value;
+            corePtyDatasheetSet[corePtyGpName].values[corePtyDatasheetSetRowIdx][1] = `='Element Name & Classification'!B${corePtyDatasheetSetRowIdx + 2}`;
+            corePtyDatasheetSet[corePtyGpName].values[corePtyDatasheetSetRowIdx][2] = `='Element Name & Classification'!C${corePtyDatasheetSetRowIdx + 2}`;
 
-            for (const elemCorePty of select(`property-groups/core[@name='${corePtyGpName}']/property`, element)) {
+            for (const elemCorePty of select(`property-groups/core[@name = '${corePtyGpName}']/property`, element)) {
                 const elemCorePtyName = select1("@name", elemCorePty).value;
                 const corePtyDatasheetSetColIdx = corePtyDatasheetSet[corePtyGpName].headers.indexOf(elemCorePtyName);
                 corePtyDatasheetSet[corePtyGpName].values[corePtyDatasheetSetRowIdx][corePtyDatasheetSetColIdx] = select1("@value", elemCorePty).value;
             }
         }
 
-        if (elemClassGpCode in configClassGpCustomPtyGpMap) {
-            let elemCustomPtyGpName = configClassGpCustomPtyGpMap[elemClassGpCode];
-            customPtyDatasheetSet[elemCustomPtyGpName].name = elemCustomPtyGpName;
-            customPtyDatasheetSet[elemCustomPtyGpName].values.push(Array(customPtyDatasheetSet[elemCustomPtyGpName].headers.length).fill(null));
+        if (elemClassGpCode != null && elemClassGpName != null) {
+            let elemCustomPtyGpName = elemClassGpCode + " " + elemClassGpName;
 
-            const customPtyDatasheetSetRowIdx = customPtyDatasheetSet[elemCustomPtyGpName].values.length - 1;
+            if (elemCustomPtyGpName in configCustomPtyMap) {
+                customPtyDatasheetSet[elemCustomPtyGpName].name = elemCustomPtyGpName;
+                customPtyDatasheetSet[elemCustomPtyGpName].values.push(Array(customPtyDatasheetSet[elemCustomPtyGpName].headers.length).fill(null));
 
-            customPtyDatasheetSet[elemCustomPtyGpName].values[customPtyDatasheetSetRowIdx][0] = select1("@guid", element).value;
+                const customPtyDatasheetSetRowIdx = customPtyDatasheetSet[elemCustomPtyGpName].values.length - 1;
 
-            for (const elemCustomPty of select("property-groups/custom/property", element)) {
-                const elemCustomPtyName = select1("@name", elemCustomPty).value;
-                const customPtyDatasheetSetColIdx = customPtyDatasheetSet[elemCustomPtyGpName].headers.indexOf(elemCustomPtyName);
-                customPtyDatasheetSet[elemCustomPtyGpName].values[customPtyDatasheetSetRowIdx][customPtyDatasheetSetColIdx] = select1("@value", elemCustomPty).value;
+                customPtyDatasheetSet[elemCustomPtyGpName].values[customPtyDatasheetSetRowIdx][0] = select1("@guid", element).value;
+
+                for (const elemCustomPty of select("property-groups/custom/property", element)) {
+                    const elemCustomPtyName = select1("@name", elemCustomPty).value;
+                    const customPtyDatasheetSetColIdx = customPtyDatasheetSet[elemCustomPtyGpName].headers.indexOf(elemCustomPtyName);
+                    customPtyDatasheetSet[elemCustomPtyGpName].values[customPtyDatasheetSetRowIdx][customPtyDatasheetSetColIdx] = select1("@value", elemCustomPty).value;
+                }
             }
         }
     }
@@ -279,7 +287,98 @@ async function main(googleSheetId) {
             }
         });
 
+        requests.push({
+            repeatCell: {
+                range: {
+                    sheetId: gs_general_sheet_id,
+                    startRowIndex: 0,
+                    startColumnIndex: 0
+                },
+                cell: {
+                    userEnteredFormat: {
+                        wrapStrategy: "CLIP"
+                    }
+                },
+                fields: "userEnteredFormat.wrapStrategy"
+            }
+        });
+
+        requests.push({
+            updateDimensionProperties: {
+                range: {
+                    sheetId: gs_general_sheet_id, // Adjust if your column is in a different sheet
+                    dimension: 'COLUMNS', // Use 'ROWS' for adjusting row height
+                    startIndex: 0, // zero-based index
+                    endIndex: 1 // exclusive, hence not -1
+                },
+                properties: {
+                    pixelSize: 300 // set the new width
+                },
+                fields: 'pixelSize' // specify the fields to update
+            }
+        });
+
+        requests.push({
+            updateDimensionProperties: {
+                range: {
+                    sheetId: gs_general_sheet_id, // Adjust if your column is in a different sheet
+                    dimension: 'COLUMNS', // Use 'ROWS' for adjusting row height
+                    startIndex: 1, // zero-based index
+                    endIndex: 2 // exclusive, hence not -1
+                },
+                properties: {
+                    pixelSize: 280 // set the new width
+                },
+                fields: 'pixelSize' // specify the fields to update
+            }
+        });
+
+        requests.push({
+            updateDimensionProperties: {
+                range: {
+                    sheetId: gs_general_sheet_id, // Adjust if your column is in a different sheet
+                    dimension: 'COLUMNS', // Use 'ROWS' for adjusting row height
+                    startIndex: 2, // zero-based index
+                    endIndex: 3 // exclusive, hence not -1
+                },
+                properties: {
+                    pixelSize: 280 // set the new width
+                },
+                fields: 'pixelSize' // specify the fields to update
+            }
+        });
+
+        requests.push({
+            updateDimensionProperties: {
+                range: {
+                    sheetId: gs_general_sheet_id, // Adjust if your column is in a different sheet
+                    dimension: 'COLUMNS', // Use 'ROWS' for adjusting row height
+                    startIndex: 3, // zero-based index
+                },
+                properties: {
+                    pixelSize: 200 // set the new width
+                },
+                fields: 'pixelSize' // specify the fields to update
+            }
+        });
+
         for (let core_property_group_key of Object.keys(gs_core_pty_sheet_id_list)) {
+            requests.push({
+                repeatCell: {
+                    range: {
+                        sheetId: gs_core_pty_sheet_id_list[core_property_group_key],
+                        startRowIndex: 0,
+                        startColumnIndex: 0
+                    },
+                    cell: {
+                        userEnteredFormat: {
+                            wrapStrategy: "CLIP"
+                        }
+                    },
+                    fields: "userEnteredFormat.wrapStrategy"
+                }
+            });
+
             requests.push({
                 updateSheetProperties: {
                     properties: {
@@ -309,9 +408,131 @@ async function main(googleSheetId) {
                     fields: "userEnteredFormat(backgroundColor,textFormat)"
                 }
             });
+
+            requests.push({
+                updateDimensionProperties: {
+                    range: {
+                        sheetId: gs_core_pty_sheet_id_list[core_property_group_key], // Adjust if your column is in a different sheet
+                        dimension: 'COLUMNS', // Use 'ROWS' for adjusting row height
+                        startIndex: 0, // zero-based index
+                        endIndex: 1 // exclusive, hence not -1
+                    },
+                    properties: {
+                        pixelSize: 300 // set the new width
+                    },
+                    fields: 'pixelSize' // specify the fields to update
+                }
+            });
+
+            requests.push({
+                updateDimensionProperties: {
+                    range: {
+                        sheetId: gs_core_pty_sheet_id_list[core_property_group_key], // Adjust if your column is in a different sheet
+                        dimension: 'COLUMNS', // Use 'ROWS' for adjusting row height
+                        startIndex: 1, // zero-based index
+                        endIndex: 2 // exclusive, hence not -1
+                    },
+                    properties: {
+                        pixelSize: 280 // set the new width
+                    },
+                    fields: 'pixelSize' // specify the fields to update
+                }
+            });
+
+            requests.push({
+                updateDimensionProperties: {
+                    range: {
+                        sheetId: gs_core_pty_sheet_id_list[core_property_group_key], // Adjust if your column is in a different sheet
+                        dimension: 'COLUMNS', // Use 'ROWS' for adjusting row height
+                        startIndex: 2, // zero-based index
+                        endIndex: 3 // exclusive, hence not -1
+                    },
+                    properties: {
+                        pixelSize: 150 // set the new width
+                    },
+                    fields: 'pixelSize' // specify the fields to update
+                }
+            });
+
+            requests.push({
+                updateDimensionProperties: {
+                    range: {
+                        sheetId: gs_core_pty_sheet_id_list[core_property_group_key], // Adjust if your column is in a different sheet
+                        dimension: 'COLUMNS', // Use 'ROWS' for adjusting row height
+                        startIndex: 3, // zero-based index
+                    },
+                    properties: {
+                        pixelSize: 200 // set the new width
+                    },
+                    fields: 'pixelSize' // specify the fields to update
+                }
+            });
+
+            requests.push({
+                addProtectedRange: {
+                    protectedRange: {
+                        range: {
+                            sheetId: gs_core_pty_sheet_id_list[core_property_group_key],
+                            startRowIndex: 0,
+                            startColumnIndex: 0,
+                            endColumnIndex: 3,
+                        },
+                        description: 'This range is protected',
+                        warningOnly: false,
+                        editors: {
+                            users: ['google-sheets-user@sincere-bay-406415.iam.gserviceaccount.com'], // Users who can edit the protected range
+                        }
+                    }
+                }
+            });
         }
 
         for (let custom_property_group_key of Object.keys(gs_custom_pty_sheet_id_list)) {
+            requests.push({
+                updateDimensionProperties: {
+                    range: {
+                        sheetId: gs_custom_pty_sheet_id_list[custom_property_group_key], // Adjust if your column is in a different sheet
+                        dimension: 'COLUMNS', // Use 'ROWS' for adjusting row height
+                        startIndex: 0, // zero-based index
+                        endIndex: 1 // exclusive, hence not -1
+                    },
+                    properties: {
+                        pixelSize: 300 // set the new width
+                    },
+                    fields: 'pixelSize' // specify the fields to update
+                }
+            });
+
+            requests.push({
+                updateDimensionProperties: {
+                    range: {
+                        sheetId: gs_custom_pty_sheet_id_list[custom_property_group_key], // Adjust if your column is in a different sheet
+                        dimension: 'COLUMNS', // Use 'ROWS' for adjusting row height
+                        startIndex: 1, // zero-based index
+                    },
+                    properties: {
+                        pixelSize: 200 // set the new width
+                    },
+                    fields: 'pixelSize' // specify the fields to update
+                }
+            });
+
+            requests.push({
+                repeatCell: {
+                    range: {
+                        sheetId: gs_custom_pty_sheet_id_list[custom_property_group_key],
+                        startRowIndex: 0,
+                        startColumnIndex: 0
+                    },
+                    cell: {
+                        userEnteredFormat: {
+                            wrapStrategy: "CLIP"
+                        }
+                    },
+                    fields: "userEnteredFormat.wrapStrategy"
+                }
+            });
+
             requests.push({
                 updateSheetProperties: {
                     properties: {

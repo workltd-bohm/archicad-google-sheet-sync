@@ -26,12 +26,12 @@ for (const customPtyNode of select("/configuration/property-groups/custom", conf
     }
 }
 
-export let configClassGpCustomPtyGpMap = {};
+// export let configClassGpCustomPtyGpMap = {};
 
-for (const mappingNode of select("/configuration/classification-group-custom-property-group-mapping/mapping", configXmlDoc)) {
-    configClassGpCustomPtyGpMap[select1("@classification-group", mappingNode).value] =
-        select1("@property-group", mappingNode).value;
-}
+// for (const mappingNode of select("/configuration/classification-group-custom-property-group-mapping/mapping", configXmlDoc)) {
+//     configClassGpCustomPtyGpMap[select1("@classification-group", mappingNode).value] =
+//         select1("@property-group", mappingNode).value;
+// }
 
 export const getSheet = async function (service, googlesheetId, sheetName, hasHeader = false) {
     const result = await service.values.get({
