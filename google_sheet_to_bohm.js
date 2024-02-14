@@ -72,6 +72,12 @@ async function parseImportData(sheetData) {
         let element = {
             guid: generalDatasheetRow[0],
             name: generalDatasheetRow[1],
+            libraryPart: {
+                documentName: generalDatasheetRow[6],
+                index: generalDatasheetRow[7],
+                uniqueId: generalDatasheetRow[8]
+            },
+            modiStamp: generalDatasheetRow[9],
             classification: generalDatasheetRow[2].split(' ')[0],
             classificationGroupCode: generalDatasheetRow[3].split(' ')[0],
             classificationGroupName: generalDatasheetRow[3].split(' ').slice(1).join(' '),
@@ -113,11 +119,11 @@ async function parseImportData(sheetData) {
 
         for (let custom_property_group_key of Object.keys(elementCustomPropertyEntries)) {
 
-            console.log(`${custom_property_group_key} ----- ${requiredCustomPtyGroupName}`);
+            // console.log(`${custom_property_group_key} ----- ${requiredCustomPtyGroupName}`);
 
             if (requiredCustomPtyGroupName != custom_property_group_key) { continue; }
 
-            console.log(requiredCustomPtyGroupName);
+            // console.log(requiredCustomPtyGroupName);
 
             element.customPropertyGroups[custom_property_group_key] = [];
             let datasheetRowIndex = -1;
@@ -167,9 +173,16 @@ async function constructImportDataXml(scheduleObj) {
         let xmlElement = {
             "@guid": element.guid,
             "@name": element.name,
+            "@modiStamp": element.modiStamp,
+            "library-part": {
+                "@documentName": element.libraryPart.documentName,
+                "@index": element.libraryPart.index,
+                "@uniqueId": element.libraryPart.uniqueId
+            },
             classification: { "@code": element.classification },
             "classification-group": { "@code": element.classificationGroupCode },
-            "property-groups": { core: [], custom: [] }
+            "core-property-groups": { group: [] },
+            "custom-property-groups": { group: [] }
         };
 
         for (const corePtyGroupKey of Object.keys(element.corePropertyGroups)) {
@@ -178,7 +191,7 @@ async function constructImportDataXml(scheduleObj) {
                 propertyGroup.property.push({ "@name": corePty.name, "@value": corePty.value });
             }
 
-            xmlElement["property-groups"].core.push(propertyGroup);
+            xmlElement["core-property-groups"].group.push(propertyGroup);
         }
 
         for (const customPtyGroupKey of Object.keys(element.customPropertyGroups)) {
@@ -187,7 +200,7 @@ async function constructImportDataXml(scheduleObj) {
                 propertyGroup.property.push({ "@name": customPty.name, "@value": customPty.value });
             }
 
-            xmlElement["property-groups"].custom.push(propertyGroup);
+            xmlElement["custom-property-groups"].group.push(propertyGroup);
         }
 
         xmlObj.project.elements.element.push(xmlElement);
