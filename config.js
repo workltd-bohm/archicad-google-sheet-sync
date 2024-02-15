@@ -5,7 +5,7 @@ import { homedir } from 'os';
 
 
 
-const configData = readFileSync(homedir() + '/bohm/add-on-config.xml', 'utf8');
+const configData = readFileSync(homedir() + '/bohm/config/add-on-config.xml', 'utf8');
 const configXmlDoc = new DOMParser().parseFromString(configData, 'text/xml');
 
 export const configurationCorePropertyMap = select("/configuration/property-groups/core", configXmlDoc).map(corePtyGpNode => {

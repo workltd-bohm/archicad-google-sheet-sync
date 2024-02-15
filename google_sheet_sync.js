@@ -1,109 +1,31 @@
 import { homedir } from "os";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { DOMParser } from "@xmldom/xmldom";
-import { select, select1 } from "xpath";
+import { create } from 'xmlbuilder2';
 import { google } from "googleapis";
 import { GoogleAuth } from "google-auth-library";
+import { parseSyncXmlData, composeSyncXmlData } from "./database_api.js";
 import { getSpreadSheetProperty, getSheetData, createSpreadSheet, formatHeaderRequests, protectedRangeRequest, dataValidationRequest } from "./google_sheet_api.js";
 import { configurationCorePropertyMap, configurationCustomPropertyMap, classificationOptionMap, classificationGroupOptionMap } from "./config.js";
 import dayjs from 'dayjs';
 
-process.env["GOOGLE_APPLICATION_CREDENTIALS"] = `${homedir()}/bohm/service-account-token.json`;
-
-const parseSyncXmlData = async function (syncXmlDoc) {
-    let project = {
-        name: null,
-        elements: [],
-        deletedElements: []
-    };
-
-    project.name = select1("/project/@name", syncXmlDoc).value;
-
-    select("/project/elements/element", syncXmlDoc).forEach(xmlElement => {
-        let element = {
-            guid: select1("@guid", xmlElement).value,
-            name: select1("@name", xmlElement).value,
-            type: select1("@type", xmlElement).value,
-            variation: select1("@variation", xmlElement).value,
-            modiStamp: select1("@modiStamp", xmlElement).value,
-            classification: {
-                code: select1("@code", select1("classification", xmlElement)).value,
-                name: select1("@name", select1("classification", xmlElement)).value
-            },
-            classificationGroup: {
-                code: select1("@code", select1("classification-group", xmlElement)).value,
-                name: select1("@name", select1("classification-group", xmlElement)).value
-            },
-            libraryPart: {
-                index: select1("@index", select1("library-part", xmlElement)).value,
-                documentName: select1("@documentName", select1("library-part", xmlElement)).value,
-                uniqueId: select1("@uniqueId", select1("library-part", xmlElement)).value
-            },
-            coreProperties: new Map(),
-            customProperties: new Map()
-        };
-
-        configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
-            element.coreProperties.set(corePtyGpName, new Map());
-            corePtyMap.forEach(corePtyName => {
-                const corePtyNode = select1(`core-property-groups/group[@name="${corePtyGpName}"]/property[@name="${corePtyName}"]/@value`, xmlElement);
-                element.coreProperties.get(corePtyGpName).set(corePtyName, corePtyNode == null ? null : corePtyNode.value);
-            });
-        });
+process.env["GOOGLE_APPLICATION_CREDENTIALS"] = `${homedir()}/bohm/config/service-account-token.json`;
 
 
-        // Object.keys(configurationCorePropertyMap).forEach(corePtyGpName => {
-        //     element.coreProperties[corePtyGpName] = {};
-
-        //     configurationCorePropertyMap[corePtyGpName].forEach(corePtyName => {
-        //         const corePtyNode = select1(`core-property-groups/group[@name="${corePtyGpName}"]/property[@name="${corePtyName}"]/@value`, xmlElement);
-        //         element.coreProperties[corePtyGpName][corePtyName] = corePtyNode == null ? null : corePtyNode.value;
-        //     });
-        // });
-
-        if (element.classificationGroup.code != null && element.classificationGroup.name != null) {
-            const customPropertyGroupName = `${element.classificationGroup.code} ${element.classificationGroup.name}`;
-            element.customProperties.set(customPropertyGroupName, new Map());
-
-            if (configurationCustomPropertyMap.has(customPropertyGroupName)) {
-                configurationCustomPropertyMap.get(customPropertyGroupName).forEach(customPtyName => {
-                    const customPtyNode = select1(`custom-property-groups/group[@name="${customPropertyGroupName}"]/property[@name="${customPtyName}"]/@value`, xmlElement);
-                    element.customProperties.get(customPropertyGroupName).set(customPtyName, customPtyNode == null ? null : customPtyNode.value);
-                });
-            }
-
-            // if (Object.keys(configurationCustomPropertyMap).includes(customPropertyGroupName)) {
-            //     configurationCustomPropertyMap[customPropertyGroupName].forEach(customPtyName => {
-            //         const customPtyNode = select1(`custom-property-groups/group[@name="${customPropertyGroupName}"]/property[@name="${customPtyName}"]/@value`, xmlElement);
-            //         element.customProperties[customPropertyGroupName][customPtyName] = customPtyNode == null ? null : customPtyNode.value;
-            //     });
-            // }
-        }
-
-        project.elements.push(element);
-    });
-
-    select("/project/deleted-elements/element", syncXmlDoc).forEach(xmlElement => {
-        project.deletedElements.push(select1("@guid", xmlElement).value);
-    });
-
-    return project;
-}
-
-async function getAllSheetData(sheet_service, spreadSheetMetaData) {
-    const projectSheet = await getSheetData(sheet_service, spreadSheetMetaData, "Project Information", false);
-    const generalSheet = await getSheetData(sheet_service, spreadSheetMetaData, "Element Name & Classification", true);
+async function getAllSheetData(sheetService, spreadSheetMetaData) {
+    const projectSheet = await getSheetData(sheetService, spreadSheetMetaData, "Project Information", false);
+    const generalSheet = await getSheetData(sheetService, spreadSheetMetaData, "Element Name & Classification", true);
 
     let corePropertySheets = new Map();
     let customPropertySheets = new Map();
 
 
     for (const corePtyGpName of configurationCorePropertyMap.keys()) {
-        corePropertySheets.set(corePtyGpName, await getSheetData(sheet_service, spreadSheetMetaData, corePtyGpName, true));
+        corePropertySheets.set(corePtyGpName, await getSheetData(sheetService, spreadSheetMetaData, corePtyGpName, true));
     }
 
     for (const customPtyGpName of configurationCustomPropertyMap.keys()) {
-        customPropertySheets.set(customPtyGpName, await getSheetData(sheet_service, spreadSheetMetaData, customPtyGpName, true));
+        customPropertySheets.set(customPtyGpName, await getSheetData(sheetService, spreadSheetMetaData, customPtyGpName, true));
     }
 
     return [projectSheet, generalSheet, corePropertySheets, customPropertySheets];
@@ -150,8 +72,84 @@ const composeCustomPropertySheetRow = async function (element, configPropertyMap
     return row;
 }
 
-const updateSheetsData = async function (sheet_service, spreadSheetMetaData, syncData) {
-    const [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await getAllSheetData(sheet_service, spreadSheetMetaData);
+const parseSheetsData = function (projectSheet, generalSheet, corePropertySheets, customPropertySheets) {
+    let project = {
+        name: null,
+        elements: [],
+        deletedElements: []
+    };
+
+    project.name = projectSheet.values[0][1];
+
+    for (const row of generalSheet.values) {
+        let element = {
+            guid: row[0]?.trim(),
+            name: row[1]?.trim(),
+            classification: {
+                code: row[2]?.trim().split(' ')[0],
+                name: row[2]?.trim().split(' ').slice(1).join(' ')
+            },
+            classificationGroup: {
+                code: row[3]?.trim().split(' ')[0],
+                name: row[3]?.trim().split(' ').slice(1).join(' ')
+            },
+            type: row[4]?.trim(),
+            variation: row[5]?.trim(),
+            libraryPart: {
+                documentName: row[6]?.trim(),
+                index: row[7]?.trim(),
+                uniqueId: row[8]?.trim()
+            },
+            modiStamp: row[9]?.trim(),
+            coreProperties: new Map(),
+            customProperties: new Map()
+        };
+
+        configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
+            let corePtyRow = corePropertySheets.get(corePtyGpName).values.find(corePtyRow => corePtyRow[0] == row[0]);
+            element.coreProperties.set(corePtyGpName, new Map());
+
+            if (corePtyRow == null) {
+                corePtyRow = [row[0], row[1], row[2], ...Array(configurationCustomPropertyMap.get(customPropertyGroupName).length).fill(null)];
+            }
+
+            corePtyMap.forEach(corePtyName => {
+                const corePtyVal = corePtyRow[corePropertySheets.get(corePtyGpName).headers.indexOf(corePtyName)];
+                if (corePtyVal?.trim()?.length > 0) {
+                    element.coreProperties.get(corePtyGpName).set(corePtyName, corePtyVal?.trim());
+                }
+
+            });
+        });
+
+        if (element.classificationGroup.code != null && element.classificationGroup.name != null) {
+            const customPropertyGroupName = `${element.classificationGroup.code} ${element.classificationGroup.name}`;
+
+            if (configurationCustomPropertyMap.has(customPropertyGroupName)) {
+                let customPtyRow = customPropertySheets.get(customPropertyGroupName).values.find(customPtyRow => customPtyRow[0] == row[0]);
+                element.customProperties.set(customPropertyGroupName, new Map());
+
+                if (customPtyRow == null) {
+                    customPtyRow = [row[0], ...Array(configurationCustomPropertyMap.get(customPropertyGroupName).length).fill(null)];
+                }
+
+                configurationCustomPropertyMap.get(customPropertyGroupName).forEach(customPtyName => {
+                    const customPtyVal = customPtyRow[customPropertySheets.get(customPropertyGroupName).headers.indexOf(customPtyName)];
+                    if (customPtyVal?.trim()?.length > 0) {
+                        element.customProperties.get(customPropertyGroupName).set(customPtyName, customPtyVal?.trim());
+                    }
+                });
+            }
+        }
+
+        project.elements.push(element);
+    }
+
+    return project;
+}
+
+const updateSheetsData = async function (sheetService, spreadSheetMetaData, syncData) {
+    const [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await getAllSheetData(sheetService, spreadSheetMetaData);
 
     let changeSet = [];
     let extendRowSet = new Map();
@@ -205,6 +203,10 @@ const updateSheetsData = async function (sheet_service, spreadSheetMetaData, syn
         // Handle the custom property sheet.
         if (element.customProperties.size > 0) {
             for (const customPtyGpName of element.customProperties.keys()) {
+                if (!configurationCustomPropertyMap.has(customPtyGpName)) {
+                    continue;
+                }
+
                 const customPropertySheet = customPropertySheets.get(customPtyGpName);
                 let customPropertySheetRowData = await composeCustomPropertySheetRow(element, configurationCustomPropertyMap.get(customPtyGpName), element.customProperties.get(customPtyGpName));
                 let customPropertySheetRowIndex = customPropertySheet.values.findIndex(row => row[0] == element.guid);
@@ -227,7 +229,7 @@ const updateSheetsData = async function (sheet_service, spreadSheetMetaData, syn
 
     // Extend the rows of the sheets before adding new data.
     if (extendRowSet.size > 0) {
-        const response = await sheet_service.batchUpdate({
+        const response = await sheetService.batchUpdate({
             spreadsheetId: spreadSheetMetaData.id,
             resource: {
                 requests: Array.from(extendRowSet.entries()).map(([sheetName, extendRowCount]) => {
@@ -245,7 +247,7 @@ const updateSheetsData = async function (sheet_service, spreadSheetMetaData, syn
     // Extend the rows of the sheets before adding new data.
 
     // Update and add new data to the sheets.
-    const response = await sheet_service.values.batchUpdate({
+    const response = await sheetService.values.batchUpdate({
         spreadsheetId: spreadSheetMetaData.id,
         resource: {
             data: changeSet,
@@ -285,7 +287,7 @@ const updateSheetsData = async function (sheet_service, spreadSheetMetaData, syn
         });
 
         if (deleteRowSet.size > 0) {
-            const response = await sheet_service.batchUpdate({
+            const response = await sheetService.batchUpdate({
                 spreadsheetId: spreadSheetMetaData.id,
                 resource: {
                     requests: Array.from(deleteRowSet.entries()).map(([sheetName, deleteRowIndex]) => {
@@ -386,17 +388,57 @@ const createMasterSpreadsheet = async function (driveService, sheetService, proj
     return spreadSheetMetaData;
 }
 
-async function main(spreadSheetId, dataFilePath) {
-    if (!existsSync(homedir() + "/bohm/add-on-export-data.xml")) {
-        console.error("Data file not found");
-        return;
+const handleConsoleArguments = function (args) {
+    let direction = null;
+    let dataFileName = null;
+    let spreadSheetId = null;
+
+    if (args.length % 2 !== 0) {
+        console.error('Invalid arguments');
+        process.exit(1);
     }
 
-    const syncFile = readFileSync(homedir() + "/bohm/add-on-export-data.xml", "utf8");
-    const syncXmlDoc = new DOMParser().parseFromString(syncFile, "text/xml");
+    for (let i = 0; i < args.length; i++) {
+        switch (args[i]) {
+            case "--direction":
+                direction = args[++i]; // Increment i to get the next element
+                break;
+            case "--dataFile":
+                dataFileName = args[++i];
+                break;
+            case "--spreadSheet":
+                spreadSheetId = args[++i];
+                break;
+        }
+    }
 
-    const syncData = await parseSyncXmlData(syncXmlDoc);
+    if (!["push", "pull"].includes(direction)) {
+        console.error('Invalid direction. Must be "push" or "pull".');
+        process.exit(1);
+    }
 
+    if (dataFileName == null && direction === "push") {
+        console.error('Data file name is required for "push" direction.');
+        process.exit(1);
+    }
+
+    if (spreadSheetId == null && direction === "pull") {
+        console.error('Spreadsheet ID is required for "pull" direction.');
+        process.exit(1);
+    }
+
+    if (dataFileName == null && direction === "pull") {
+        console.error('Data file name is required for "pull" direction.');
+        process.exit(1);
+    }
+
+    return [direction, dataFileName, spreadSheetId];
+}
+
+async function main(args) {
+    const [direction, dataFileName, spreadSheetId] = handleConsoleArguments(args);
+
+    // Initialize the Google Drive API and Google Sheets API connection.
     const auth = new GoogleAuth({
         scopes: [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -405,22 +447,47 @@ async function main(spreadSheetId, dataFilePath) {
 
     const sheetService = google.sheets({ version: "v4", auth }).spreadsheets;
     const driveService = google.drive({ version: "v3", auth });
-    let spreadSheetMetaData = null;
-    // spreadSheetId = "1FGIp5upZ-OePUOvm-k-yTpkqCSnf-Rtsoz0fKoHWj5Y";
+    // Initialize the Google Drive API and Google Sheets API connection.
 
-    if (spreadSheetId == null) {
-        spreadSheetMetaData = await createMasterSpreadsheet(driveService, sheetService, syncData.name);
-    } else {
-        spreadSheetMetaData = await getSpreadSheetProperty(sheetService, spreadSheetId, true, true);
+    const dataFilePath = `${homedir()}/bohm/files/${dataFileName}`;
+
+    if (direction === "push") {
+        if (!existsSync(dataFilePath)) {
+            console.error("Data file not found");
+            return;
+        }
+
+        const syncFile = readFileSync(dataFilePath, "utf8");
+        const syncXmlDoc = new DOMParser().parseFromString(syncFile, "text/xml");
+
+        const syncData = await parseSyncXmlData(syncXmlDoc);
+
+        const spreadSheetMetaData = spreadSheetId == null ?
+            await createMasterSpreadsheet(driveService, sheetService, syncData.name) :
+            await getSpreadSheetProperty(sheetService, spreadSheetId, true, true);
+
+        await updateSheetsData(sheetService, spreadSheetMetaData, syncData);
+
+        console.log(`Data sheet name: ${spreadSheetMetaData.name}`);
+        console.log(`Data sheet ID: ${spreadSheetMetaData.id}`);
+        console.log(`Data sheet URL: ${spreadSheetMetaData.url}`);
+    } else if (direction === "pull") {
+        const spreadSheetMetaData = await getSpreadSheetProperty(sheetService, spreadSheetId, true, true);
+        const [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await getAllSheetData(sheetService, spreadSheetMetaData);
+
+        const syncData = parseSheetsData(projectSheet, generalSheet, corePropertySheets, customPropertySheets);
+
+        const syncXmlDoc = composeSyncXmlData(syncData);
+
+        try {
+            // add-on-import-data.xml
+            writeFileSync(dataFilePath, create({ encoding: "UTF-8", standalone: false }, syncXmlDoc).end({ prettyPrint: true }));
+
+            console.log(`${dataFilePath} has been saved.`);
+        } catch (error) {
+            console.error(error);
+        }
     }
-
-    await updateSheetsData(sheetService, spreadSheetMetaData, syncData);
-
-    console.log(`Data sheet name: ${spreadSheetMetaData.name}`);
-    console.log(`Data sheet ID: ${spreadSheetMetaData.id}`);
-    console.log(`Data sheet URL: ${spreadSheetMetaData.url}`);
 }
 
-const args = process.argv.slice(2);
-
-main(args[0]).catch(console.error);
+main(process.argv.slice(2)).catch(console.error);
