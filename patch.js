@@ -31,41 +31,41 @@ async function getAllSheetData(sheetService, spreadSheetMetaData) {
     return [projectSheet, generalSheet, corePropertySheets, customPropertySheets];
 }
 
-const composeGeneralSheetRow = function (element) {
+const composeGeneralSheetRow = async function (element) {
     let row = [
-        element.guid != null ? element.guid : '',
-        element.name != null ? element.name : '',
-        `${element.classification?.code != null ? element.classification.code : ''} ${element.classification.name != null ? element.classification.name : ''}`,
-        `${element.classificationGroup?.code != null ? element.classificationGroup.code : ''} ${element.classificationGroup.name != null ? element.classificationGroup.name : ''}`,
-        element.type != null ? element.type : '',
-        element.variation != null ? element.variation : '',
-        element.libraryPart?.documentName != null ? element.libraryPart.documentName : '',
-        element.libraryPart?.index != null ? element.libraryPart.index : '',
-        element.libraryPart?.uniqueId != null ? element.libraryPart.uniqueId : '',
-        element.modiStamp != null ? element.modiStamp : ''
+        element.guid,
+        element.name,
+        `${element.classification.code} ${element.classification.name}`,
+        `${element.classificationGroup.code} ${element.classificationGroup.name}`,
+        element.type,
+        element.variation,
+        element.libraryPart.documentName,
+        element.libraryPart.index,
+        element.libraryPart.uniqueId,
+        element.modiStamp
     ];
 
     return row;
 }
 
-const composeCorePropertySheetRow = function (element, generalSheetRowIndex, configPropertyMap, elementProperties) {
+const composeCorePropertySheetRow = async function (element, generalSheetRowIndex, configPropertyMap, elementProperties) {
     let row = [
         element.guid,
         `='Element Name & Classification'!B${generalSheetRowIndex + 2}`,
         `='Element Name & Classification'!C${generalSheetRowIndex + 2}`,
         ...configPropertyMap.map(propertyName => {
-            return elementProperties.get(propertyName) != null ? elementProperties.get(propertyName) : '';
+            return elementProperties.get(propertyName);
         })
     ];
 
     return row;
 }
 
-const composeCustomPropertySheetRow = function (element, configPropertyMap, elementProperties) {
+const composeCustomPropertySheetRow = async function (element, configPropertyMap, elementProperties) {
     let row = [
         element.guid,
         ...configPropertyMap.map(propertyName => {
-            return elementProperties.get(propertyName) != null ? elementProperties.get(propertyName) : '';
+            return elementProperties.get(propertyName);
         })
     ];
 
@@ -163,14 +163,13 @@ const updateSheetsData = async function (sheetService, spreadSheetMetaData, sync
     // Compare the data and update the Google Sheet.
     for (const element of syncData.elements) {
         // Handle the "Element & Classification" sheet.
-        const generalSheetRowData = composeGeneralSheetRow(element);
+        const generalSheetRowData = await composeGeneralSheetRow(element);
         let generalSheetRowIndex = generalSheet.values.findIndex(row => row[0] == element.guid);
 
         if (generalSheetRowIndex == -1) {
             // Add the element to the "Element & Classification" sheet.
             extendRowSet.set(generalSheet.name, extendRowSet.get(generalSheet.name) == null ? 1 : extendRowSet.get(generalSheet.name) + 1);
             generalSheetRowIndex = generalSheet.values.length;
-            generalSheet.values.push(generalSheetRowData);
         }
 
         changeSet.push({
@@ -178,24 +177,26 @@ const updateSheetsData = async function (sheetService, spreadSheetMetaData, sync
             values: [generalSheetRowData],
         });
 
+        generalSheet.values.push(generalSheetRowData);
         // Handle the "Element & Classification" sheet.
 
         // Handle the core property sheets.
         for (const corePtyGpName of configurationCorePropertyMap.keys()) {
             const corePropertySheet = corePropertySheets.get(corePtyGpName);
-            let corePropertySheetRowData = composeCorePropertySheetRow(element, generalSheetRowIndex, configurationCorePropertyMap.get(corePtyGpName), element.coreProperties.get(corePtyGpName));
+            let corePropertySheetRowData = await composeCorePropertySheetRow(element, generalSheetRowIndex, configurationCorePropertyMap.get(corePtyGpName), element.coreProperties.get(corePtyGpName));
             let corePropertySheetRowIndex = corePropertySheet.values.findIndex(row => row[0] == element.guid);
 
             if (corePropertySheetRowIndex == -1) {
                 extendRowSet.set(corePtyGpName, extendRowSet.get(corePtyGpName) == null ? 1 : extendRowSet.get(corePtyGpName) + 1);
                 corePropertySheetRowIndex = corePropertySheet.values.length;
-                corePropertySheet.values.push(corePropertySheetRowData);
             }
 
             changeSet.push({
                 range: `'${corePropertySheet.name}'!A${corePropertySheetRowIndex + 2}`,
                 values: [corePropertySheetRowData],
             });
+
+            corePropertySheet.values.push(corePropertySheetRowData);
         }
         // Handle the core property sheets.
 
@@ -207,19 +208,20 @@ const updateSheetsData = async function (sheetService, spreadSheetMetaData, sync
                 }
 
                 const customPropertySheet = customPropertySheets.get(customPtyGpName);
-                let customPropertySheetRowData = composeCustomPropertySheetRow(element, configurationCustomPropertyMap.get(customPtyGpName), element.customProperties.get(customPtyGpName));
+                let customPropertySheetRowData = await composeCustomPropertySheetRow(element, configurationCustomPropertyMap.get(customPtyGpName), element.customProperties.get(customPtyGpName));
                 let customPropertySheetRowIndex = customPropertySheet.values.findIndex(row => row[0] == element.guid);
 
                 if (customPropertySheetRowIndex == -1) {
                     extendRowSet.set(customPtyGpName, extendRowSet.get(customPtyGpName) == null ? 1 : extendRowSet.get(customPtyGpName) + 1);
                     customPropertySheetRowIndex = customPropertySheet.values.length;
-                    customPropertySheet.values.push(customPropertySheetRowData);
                 }
 
                 changeSet.push({
                     range: `'${customPropertySheet.name}'!A${customPropertySheetRowIndex + 2}`,
                     values: [customPropertySheetRowData],
                 });
+
+                customPropertySheet.values.push(customPropertySheetRowData);
             }
         }
         // Handle the custom property sheet.
@@ -262,10 +264,7 @@ const updateSheetsData = async function (sheetService, spreadSheetMetaData, sync
             let generalSheetRowIndex = generalSheet.values.findIndex(row => row[0] == guid);
 
             if (generalSheetRowIndex > -1) {
-                if (!deleteRowSet.has(generalSheet.name)) {
-                    deleteRowSet.set(generalSheet.name, []);
-                }
-                deleteRowSet.get(generalSheet.name).push(generalSheetRowIndex + 1);
+                deleteRowSet.set(generalSheet.name, generalSheetRowIndex + 1);
             }
 
             for (const corePtyGpName of configurationCorePropertyMap.keys()) {
@@ -273,10 +272,7 @@ const updateSheetsData = async function (sheetService, spreadSheetMetaData, sync
                 let corePropertySheetRowIndex = corePropertySheet.values.findIndex(row => row[0] == guid);
 
                 if (corePropertySheetRowIndex > -1) {
-                    if (!deleteRowSet.has(corePropertySheet.name)) {
-                        deleteRowSet.set(corePropertySheet.name, []);
-                    }
-                    deleteRowSet.get(corePropertySheet.name).push(corePropertySheetRowIndex + 1);
+                    deleteRowSet.set(corePropertySheet.name, corePropertySheetRowIndex + 1);
                 }
             }
 
@@ -285,37 +281,30 @@ const updateSheetsData = async function (sheetService, spreadSheetMetaData, sync
                 let customPropertySheetRowIndex = customPropertySheet.values.findIndex(row => row[0] == guid);
 
                 if (customPropertySheetRowIndex > -1) {
-                    if (!deleteRowSet.has(customPropertySheet.name)) {
-                        deleteRowSet.set(customPropertySheet.name, []);
-                    }
-                    deleteRowSet.get(customPropertySheet.name).push(customPropertySheetRowIndex + 1);
+                    deleteRowSet.set(customPropertySheet.name, customPropertySheetRowIndex + 1);
                 }
             }
         });
 
         if (deleteRowSet.size > 0) {
-            for (let [sheetName, deleteRowIndexList] of deleteRowSet.entries()) {
-                deleteRowIndexList.sort((a, b) => b - a);
-
-                const response = await sheetService.batchUpdate({
-                    spreadsheetId: spreadSheetMetaData.id,
-                    resource: {
-                        requests: deleteRowIndexList.map(deleteRowIndex => {
-                            return {
-                                deleteDimension: {
-                                    range: {
-                                        sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === sheetName)?.id,
-                                        dimension: "ROWS",
-                                        startIndex: deleteRowIndex,
-                                        endIndex: deleteRowIndex + 1
-                                    }
+            const response = await sheetService.batchUpdate({
+                spreadsheetId: spreadSheetMetaData.id,
+                resource: {
+                    requests: Array.from(deleteRowSet.entries()).map(([sheetName, deleteRowIndex]) => {
+                        return {
+                            deleteDimension: {
+                                range: {
+                                    sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === sheetName)?.id,
+                                    dimension: "ROWS",
+                                    startIndex: deleteRowIndex,
+                                    endIndex: deleteRowIndex + 1
                                 }
-                            };
-                        })
-                    }
-                });
-            }
-        }
+                            }
+                        };
+                    })
+                }
+            });
+        };
     }
 
 
@@ -457,47 +446,82 @@ async function main(args) {
     });
 
     const sheetService = google.sheets({ version: "v4", auth }).spreadsheets;
-    const driveService = google.drive({ version: "v3", auth });
     // Initialize the Google Drive API and Google Sheets API connection.
 
-    const dataFilePath = `${homedir()}/bohm/files/${dataFileName}`;
 
     if (direction === "push") {
-        if (!existsSync(dataFilePath)) {
-            console.error("Data file not found");
-            return;
-        }
-
-        const syncFile = readFileSync(dataFilePath, "utf8");
-        const syncXmlDoc = new DOMParser().parseFromString(syncFile, "text/xml");
-
-        const syncData = await parseSyncXmlData(syncXmlDoc);
-
         const spreadSheetMetaData = spreadSheetId == null ?
             await createMasterSpreadsheet(driveService, sheetService, syncData.name) :
             await getSpreadSheetProperty(sheetService, spreadSheetId, true, true);
 
-        await updateSheetsData(sheetService, spreadSheetMetaData, syncData);
+        // await updateSheetsData(sheetService, spreadSheetMetaData, syncData);
 
-        console.log(`${dayjs().format('YYYY-MM-DD HH:mm:ss')}: Data sheet name: ${spreadSheetMetaData.name}`);
-        console.log(`${dayjs().format('YYYY-MM-DD HH:mm:ss')}: Data sheet ID: ${spreadSheetMetaData.id}`);
-        console.log(`${dayjs().format('YYYY-MM-DD HH:mm:ss')}: Data sheet URL: ${spreadSheetMetaData.url}`);
-    } else if (direction === "pull") {
-        const spreadSheetMetaData = await getSpreadSheetProperty(sheetService, spreadSheetId, true, true);
-        const [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await getAllSheetData(sheetService, spreadSheetMetaData);
 
-        const syncData = parseSheetsData(projectSheet, generalSheet, corePropertySheets, customPropertySheets);
+        const response = await sheetService.batchUpdate({
+            spreadsheetId: spreadSheetMetaData.id,
+            resource: {
+                requests: [{
+                    deleteDimension: {
+                        range: {
+                            sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === "Element Name & Classification")?.id,
+                            dimension: "ROWS",
+                            startIndex: 7553,
+                            endIndex: 7555
+                        }
+                    }
+                }, {
+                    deleteDimension: {
+                        range: {
+                            sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === "00.00 SPECIFICATION")?.id,
+                            dimension: "ROWS",
+                            startIndex: 7553,
+                            endIndex: 7555
+                        }
+                    }
+                }, {
+                    deleteDimension: {
+                        range: {
+                            sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === "00.10 WORKFLOW")?.id,
+                            dimension: "ROWS",
+                            startIndex: 7553,
+                            endIndex: 7555
+                        }
+                    }
+                }, {
+                    deleteDimension: {
+                        range: {
+                            sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === "00.20 VALIDATION - PARTY (ELEMENT)")?.id,
+                            dimension: "ROWS",
+                            startIndex: 7553,
+                            endIndex: 7555
+                        }
+                    }
+                }, {
+                    deleteDimension: {
+                        range: {
+                            sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === "00.21 VALIDATION - FEEDBACK LOOP")?.id,
+                            dimension: "ROWS",
+                            startIndex: 7553,
+                            endIndex: 7555
+                        }
+                    }
+                }, {
+                    deleteDimension: {
+                        range: {
+                            sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === "00.30 PROCUREMENT")?.id,
+                            dimension: "ROWS",
+                            startIndex: 7553,
+                            endIndex: 7555
+                        }
+                    }
+                }
+                ]
+            }
+        });
 
-        const syncXmlDoc = composeSyncXmlData(syncData);
-
-        try {
-            // add-on-import-data.xml
-            writeFileSync(dataFilePath, create({ encoding: "UTF-8", standalone: false }, syncXmlDoc).end({ prettyPrint: true }));
-
-            console.log(`${dayjs().format('YYYY-MM-DD HH:mm:ss')}: ${dataFilePath} has been saved.`);
-        } catch (error) {
-            console.error(error);
-        }
+        console.log(`Data sheet name: ${spreadSheetMetaData.name}`);
+        console.log(`Data sheet ID: ${spreadSheetMetaData.id}`);
+        console.log(`Data sheet URL: ${spreadSheetMetaData.url}`);
     }
 }
 

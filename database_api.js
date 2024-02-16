@@ -1,4 +1,5 @@
 import { select, select1 } from "xpath";
+import { configurationCorePropertyMap, configurationCustomPropertyMap } from "./config.js";
 
 export const parseSyncXmlData = function (syncXmlDoc) {
     let project = {

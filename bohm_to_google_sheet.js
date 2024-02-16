@@ -4,7 +4,8 @@ import { google } from 'googleapis';
 import { DOMParser } from '@xmldom/xmldom'
 import { readFileSync } from 'fs';
 import { select, select1 } from 'xpath';
-import { configCorePtyMap, configCustomPtyMap, getSheet } from './common.js';
+import { configCorePtyMap, configCustomPtyMap, getSheet, getFullSheet } from './common.js';
+import dayjs from 'dayjs';
 
 process.env["GOOGLE_APPLICATION_CREDENTIALS"] = `${homedir()}/bohm/service-account-token.json`;
 
@@ -15,11 +16,12 @@ async function parseExportData(exportXmlDoc) {
     let generalDatasheet = { headers: [], values: [] };
     let corePtyDatasheetSet = {};
     let customPtyDatasheetSet = {};
+    let deletedElementGuids = [];
 
     projectInfoDatasheet = [['Project Name', select1("/project/@name", exportXmlDoc).value]];
 
     generalDatasheet.headers.push(...["Element GUID", "Element Name", "Classification", "Classification Group", "Element Type",
-        "Type Variation", "Library Part Name", "Library Part Index", "Library Part GUID"]);
+        "Type Variation", "Library Part Name", "Library Part Index", "Library Part GUID", "modiStamp"]);
 
     for (const classOption of select("/project/classification-options/classification", exportXmlDoc)) {
         const classOptionDisplay = `${select1("@code", classOption).value} ${select1("@name", classOption).value}`;
@@ -70,7 +72,8 @@ async function parseExportData(exportXmlDoc) {
                 select1("@variation", element).value,
                 select1("@documentName", elemLibPart).value,
                 select1("@index", elemLibPart).value,
-                select1("@uniqueId", elemLibPart).value
+                select1("@uniqueId", elemLibPart).value,
+                select1("@modiStamp", element).value
             ]
         );
 
@@ -81,7 +84,7 @@ async function parseExportData(exportXmlDoc) {
             corePtyDatasheetSet[corePtyGpName].values[corePtyDatasheetSetRowIdx][1] = `='Element Name & Classification'!B${corePtyDatasheetSetRowIdx + 2}`;
             corePtyDatasheetSet[corePtyGpName].values[corePtyDatasheetSetRowIdx][2] = `='Element Name & Classification'!C${corePtyDatasheetSetRowIdx + 2}`;
 
-            for (const elemCorePty of select(`property-groups/core[@name = '${corePtyGpName}']/property`, element)) {
+            for (const elemCorePty of select(`core-property-groups/group[@name = '${corePtyGpName}']/property`, element)) {
                 const elemCorePtyName = select1("@name", elemCorePty).value;
                 const corePtyDatasheetSetColIdx = corePtyDatasheetSet[corePtyGpName].headers.indexOf(elemCorePtyName);
                 corePtyDatasheetSet[corePtyGpName].values[corePtyDatasheetSetRowIdx][corePtyDatasheetSetColIdx] = select1("@value", elemCorePty).value;
@@ -99,7 +102,7 @@ async function parseExportData(exportXmlDoc) {
 
                 customPtyDatasheetSet[elemCustomPtyGpName].values[customPtyDatasheetSetRowIdx][0] = select1("@guid", element).value;
 
-                for (const elemCustomPty of select("property-groups/custom/property", element)) {
+                for (const elemCustomPty of select("custom-property-groups/group/property", element)) {
                     const elemCustomPtyName = select1("@name", elemCustomPty).value;
                     const customPtyDatasheetSetColIdx = customPtyDatasheetSet[elemCustomPtyGpName].headers.indexOf(elemCustomPtyName);
                     customPtyDatasheetSet[elemCustomPtyGpName].values[customPtyDatasheetSetRowIdx][customPtyDatasheetSetColIdx] = select1("@value", elemCustomPty).value;
@@ -108,7 +111,11 @@ async function parseExportData(exportXmlDoc) {
         }
     }
 
-    return [projectInfoDatasheet, generalDatasheet, corePtyDatasheetSet, customPtyDatasheetSet, classDataSheet, classGroupDataSheet];
+    for (const element of select("/project/deleted-elements/element", exportXmlDoc)) {
+        deletedElementGuids.push(select1("@guid", element).value);
+    }
+
+    return [projectInfoDatasheet, generalDatasheet, corePtyDatasheetSet, customPtyDatasheetSet, classDataSheet, classGroupDataSheet, deletedElementGuids];
 }
 
 async function main(googleSheetId) {
@@ -125,7 +132,7 @@ async function main(googleSheetId) {
 
     const doc = new DOMParser().parseFromString(readData, 'text/xml');
 
-    const [acProjectSHeet, acGeneralSheet, acCorePtySheetSet, acCustomPtySheetSet, acClassList, acClassGpList] = await parseExportData(doc);
+    const [acProjectSHeet, acGeneralSheet, acCorePtySheetSet, acCustomPtySheetSet, acClassList, acClassGpList, deletedElementGuids] = await parseExportData(doc);
 
     // purely dump to a new Google Sheet.
     if (googleSheetId === undefined) {
@@ -146,7 +153,7 @@ async function main(googleSheetId) {
         sheets.push({ properties: { title: "[Reserved] Classification Group List" } });
 
         let file_prop = {
-            properties: { title: acProjectSHeet[0][1] + " - Master Data List" },
+            properties: { title: `${acProjectSHeet[0][1]} - Master Data List ${dayjs().format('YYYY-MM-DD HH:mm:ss')}` },
             "sheets": sheets
         }
 
@@ -362,6 +369,24 @@ async function main(googleSheetId) {
             }
         });
 
+        requests.push({
+            addProtectedRange: {
+                protectedRange: {
+                    range: {
+                        sheetId: gs_general_sheet_id,
+                        startRowIndex: 1,
+                        startColumnIndex: 9,
+                        endColumnIndex: 10,
+                    },
+                    description: 'This range is protected',
+                    warningOnly: false,
+                    editors: {
+                        users: ['google-sheets-user@sincere-bay-406415.iam.gserviceaccount.com'], // Users who can edit the protected range
+                    }
+                }
+            }
+        });
+
         for (let core_property_group_key of Object.keys(gs_core_pty_sheet_id_list)) {
             requests.push({
                 repeatCell: {
@@ -469,11 +494,24 @@ async function main(googleSheetId) {
             });
 
             requests.push({
+                setBasicFilter: {
+                    filter: {
+                        range: {
+                            sheetId: gs_core_pty_sheet_id_list[core_property_group_key], // Adjust as needed
+                            startRowIndex: 0, // Assuming you want to start from the first row
+                            startColumnIndex: 0, // Column B index (zero-based)
+                            endColumnIndex: 3, // The end index is exclusive, so this effectively targets only column B
+                        }
+                    }
+                }
+            });
+
+            requests.push({
                 addProtectedRange: {
                     protectedRange: {
                         range: {
                             sheetId: gs_core_pty_sheet_id_list[core_property_group_key],
-                            startRowIndex: 0,
+                            startRowIndex: 1,
                             startColumnIndex: 0,
                             endColumnIndex: 3,
                         },
@@ -625,20 +663,24 @@ async function main(googleSheetId) {
     }
     // update an existing Google Sheet.
     else {
-        // ac_project_info_data, ac_general_data, ac_core_pty_data, ac_custom_pty_data, ac_class_list, ac_class_gp_list
+        let gsProjectInfoSheet = await getSheet(sheet_service, googleSheetId, 'Project Information', false);
+        let gsGeneralSheet = await getSheet(sheet_service, googleSheetId, 'Element Name & Classification', true);
+        let gsCorePtySheetSet = {};
+        let gsCustomPtySheetSet = {};
 
-        // element orientation.
-        // leverage mapping to find corresponding row in Google Sheet.
-        // case 1: AC exist, GS not exist
-        // case 2: AC not exist, GS exist
+        for (let corePtyGpSheetKey of Object.keys(configCorePtyMap)) {
+            gsCorePtySheetSet[corePtyGpSheetKey] = await getSheet(sheet_service, googleSheetId, corePtyGpSheetKey, true);
+        }
+
+        for (let customPtyGpSheetKey of Object.keys(configCustomPtyMap)) {
+            gsCustomPtySheetSet[customPtyGpSheetKey] = await getSheet(sheet_service, googleSheetId, customPtyGpSheetKey, true);
+        }
 
         // Project Information sheet.
-        let gsProjectInfoSheet = await getSheet(sheet_service, googleSheetId, 'Project Information', false);
-
         if (gsProjectInfoSheet.values[0][1] === undefined ||
             gsProjectInfoSheet.values[0][1].trim().length == 0) {
             gsProjectInfoSheet.values[0][1] = acProjectSHeet[0][1];
-            await sheet_service.values.update({
+            sheet_service.values.update({
                 spreadsheetId: googleSheetId,
                 range: "'Project Information'!A1",
                 valueInputOption: 'USER_ENTERED',
@@ -647,48 +689,136 @@ async function main(googleSheetId) {
                 }
             });
         }
+        // Project Information sheet.
 
         // General sheet.
-        let gsGeneralSheet = await getSheet(sheet_service, googleSheetId, 'Element Name & Classification', true);
+        acGeneralSheet.values.forEach(acGeneralElem => {
+            let gsGeneralElemIdx = gsGeneralSheet.values.findIndex(gsGeneralElem => gsGeneralElem[0] === acGeneralElem[0]);
 
-        let gsGeneralSheetElemIdList = gsGeneralSheet.values.map(row => row[0]);
+            if (gsGeneralElemIdx === -1) {
+                // append new element.
+                gsGeneralSheet.values.push(acGeneralElem);
+            } else {
+                // update existing element.
+                gsGeneralSheet.values[gsGeneralElemIdx] = acGeneralElem;
+            }
+        });
 
-        let newAcGeneralElemList = acGeneralSheet.values.filter(element => !gsGeneralSheetElemIdList.includes(element[0]));
+        sheet_service.values.update({
+            spreadsheetId: googleSheetId,
+            range: `'Element Name & Classification'!A1`,
+            valueInputOption: 'USER_ENTERED',
+            resource: {
+                values: [...[gsGeneralSheet.headers], ...gsGeneralSheet.values]
+            }
+        });
+        // General sheet.
 
-        if (newAcGeneralElemList.length > 0) {
-            await sheet_service.values.update({
+        // Core sheets.
+        for (let corePtyGpSheetKey of Object.keys(acCorePtySheetSet)) {
+            let gsCorePtyGpSheet = gsCorePtySheetSet[corePtyGpSheetKey];
+            let acCorePtyGpSheet = acCorePtySheetSet[corePtyGpSheetKey];
+
+            acCorePtyGpSheet.values.forEach(acCorePtyGpElem => {
+                let gsCorePtyGpElemIdx = gsCorePtyGpSheet.values.findIndex(gsCorePtyGpElem => gsCorePtyGpElem[0] === acCorePtyGpElem[0]);
+
+                if (gsCorePtyGpElemIdx === -1) {
+                    // append new element.
+                    gsCorePtyGpSheet.values.push(acCorePtyGpElem);
+                } else {
+                    // update existing element.
+                    gsCorePtyGpSheet.values[gsCorePtyGpElemIdx] = acCorePtyGpElem;
+
+                    gsCorePtyGpSheet.values[gsCorePtyGpElemIdx][1] = `='Element Name & Classification'!B${gsCorePtyGpElemIdx + 2}`;
+                    gsCorePtyGpSheet.values[gsCorePtyGpElemIdx][2] = `='Element Name & Classification'!C${gsCorePtyGpElemIdx + 2}`;
+                }
+            });
+
+            sheet_service.values.update({
                 spreadsheetId: googleSheetId,
-                range: `'Element Name & Classification'!A${gsGeneralSheet.values.length + 2}`,
+                range: `'${gsCorePtyGpSheet.name}'!A1`,
                 valueInputOption: 'USER_ENTERED',
                 resource: {
-                    values: newAcGeneralElemList
+                    values: [...[gsCorePtyGpSheet.headers], ...gsCorePtyGpSheet.values]
                 }
             });
         }
-
         // Core sheets.
-        for (let acCorePtyGpSheetKey of Object.keys(acCorePtySheetSet)) {
-            let acSheet = acCorePtySheetSet[acCorePtyGpSheetKey];
-            let gsSheet = await getSheet(sheet_service, googleSheetId, acCorePtyGpSheetKey, true);
-
-            let gsSheetElemIdList = gsSheet.values.map(row => row[0]);
-            let newAcElemList = acSheet.values.filter(element => !gsSheetElemIdList.includes(element[0]));
-
-            if (newAcElemList.length > 0) {
-                await sheet_service.values.update({
-                    spreadsheetId: googleSheetId,
-                    range: `'${acCorePtyGpSheetKey}'!A${gsGeneralSheet.values.length + 2}`,
-                    valueInputOption: 'USER_ENTERED',
-                    resource: {
-                        values: newAcElemList
-                    }
-                });
-            }
-        }
 
         // Custom sheets.
+        for (let customPtyGpSheetKey of Object.keys(acCustomPtySheetSet)) {
+            let gsCustomPtyGpSheet = gsCustomPtySheetSet[customPtyGpSheetKey];
+            let acCustomPtyGpSheet = acCustomPtySheetSet[customPtyGpSheetKey];
 
-        console.log(configCustomPtyMap);
+            acCustomPtyGpSheet.values.forEach(acCustomPtyGpElem => {
+                let gsCustomPtyGpElemIdx = gsCustomPtyGpSheet.values.findIndex(gsCustomPtyGpElem => gsCustomPtyGpElem[0] === acCustomPtyGpElem[0]);
+
+                if (gsCustomPtyGpElemIdx === -1) {
+                    // append new element.
+                    gsCustomPtyGpSheet.values.push(acCustomPtyGpElem);
+                } else {
+                    // update existing element.
+                    gsCustomPtyGpSheet.values[gsCustomPtyGpElemIdx] = acCustomPtyGpElem;
+                }
+            });
+
+            sheet_service.values.update({
+                spreadsheetId: googleSheetId,
+                range: `'${gsCustomPtyGpSheet.name}'!A1`,
+                valueInputOption: 'USER_ENTERED',
+                resource: {
+                    values: [...[gsCustomPtyGpSheet.headers], ...gsCustomPtyGpSheet.values]
+                }
+            });
+        }
+        // Custom sheets.
+
+        // Deleted elements.
+        deletedElementGuids.forEach(deletedElementGuid => {
+            // let gsGeneralElemIdx = gsGeneralSheet.values.findIndex(gsGeneralElem => gsGeneralElem[0] === deletedElementGuid);
+
+            // requests.push({
+            //     deleteDimension: {
+            //         range: {
+            //             sheetId: gs_general_sheet_id,
+            //             dimension: 'ROWS',
+            //             startIndex: gsGeneralElemIdx + 1,
+            //             endIndex: gsGeneralElemIdx + 2
+            //         }
+            //     }
+            // });
+
+            // sheet_service.batchUpdate({
+            //     spreadsheetId: googleSheetId,
+            //     resource: { requests: requests }
+            // });
+
+        });
+
+        // garbage clean up.
+        // Check the classification group in general sheet, whether the corresponding entry is in the custom sheet.
+        // gsGeneralSheet.values.forEach(gsGeneralElem => {
+        //     let gsGeneralElemClassGp = gsGeneralElem[3];
+
+        //     if (Object.keys(gsCustomPtySheetSet).includes(gsGeneralElemClassGp)) {
+        //         let gsCustomPtyGpSheet = gsCustomPtySheetSet[gsGeneralElemClassGp];
+        //         let gsCustomPtyGpElemIdx = gsCustomPtyGpSheet.values.findIndex(gsCustomPtyGpElem => gsCustomPtyGpElem[0] === gsGeneralElem[0]);
+
+        //         if (gsCustomPtyGpElemIdx === -1) {
+        //             // append new element.
+        //             gsCustomPtyGpSheet.values.push([gsGeneralElem[0], ...Array(gsCustomPtyGpSheet.headers.length - 1).fill(null)]);
+        //         }
+        //     }
+        // });
+        // Check the classification group in general sheet, whether the corresponding entry is in the custom sheet.
+
+
+
+        // 2. check any missing in those core sheets.
+        // 3. delete elements from ArchiCAD.
+        // garbage clean up.
+
+
 
         // TODO: reapply drop down list to newly created elements.
 
