@@ -3,8 +3,6 @@ import { select, select1 } from 'xpath';
 import { readFileSync } from 'fs';
 import { homedir } from 'os';
 
-
-
 const configData = readFileSync(homedir() + '/bohm/config/add-on-config.xml', 'utf8');
 const configXmlDoc = new DOMParser().parseFromString(configData, 'text/xml');
 
@@ -51,3 +49,5 @@ export const classificationGroupOptionMap = select("/configuration/classificatio
     acc.set(cur.key, cur.value);
     return acc;
 }, new Map());
+
+export const databaseConnectionUrl = select1("/configuration/database-connection/@url", configXmlDoc).value;

@@ -1,4 +1,108 @@
 import { grantPermission } from './google_drive_api.js';
+import { configurationCorePropertyMap, configurationCustomPropertyMap } from "./config.js";
+
+export const parseSheetsData = function (projectSheet, generalSheet, corePropertySheets, customPropertySheets) {
+    let project = {
+        name: null,
+        elements: [],
+        deletedElements: []
+    };
+
+    project.name = projectSheet.values[0][1];
+
+    for (const row of generalSheet.values) {
+        let element = {
+            guid: row[0]?.trim(),
+            projectCode: null,
+            name: row[1]?.trim(),
+            type: row[4]?.trim(),
+            variation: row[5]?.trim(),
+            zone: null,
+            level: null,
+            geometry: {
+                x: 0,
+                y: 0,
+                elevation: 0,
+                rotatingAngle: 0.0
+            },
+            dimension: {
+                width: 0,
+                height: 0,
+                depth: 0
+            },
+            location: null,
+            material: null,
+            finish: null,
+            mount: null,
+            modiStamp: row[9]?.trim(),
+            classification: {
+                code: row[2]?.trim().split(' ')[0],
+                name: row[2]?.trim().split(' ').slice(1).join(' '),
+            },
+            classificationGroup: {
+                code: row[3]?.trim().split(' ')[0],
+                name: row[3]?.trim().split(' ').slice(1).join(' ')
+            },
+
+            libraryPart: {
+                documentName: row[6]?.trim(),
+                index: row[7]?.trim(),
+                uniqueId: row[8]?.trim()
+            },
+            token: {
+                fungible: false,
+                contractAddress: null,
+                id: null
+            },
+            coreProperties: {},
+            customProperties: {}
+        };
+
+        element.classification.full = (element.classification.code + ' ' + element.classification.name).trim();
+        element.classificationGroup.full = (element.classificationGroup.code + ' ' + element.classificationGroup.name).trim();
+
+        configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
+            let corePtyRow = corePropertySheets.get(corePtyGpName).values.find(corePtyRow => corePtyRow[0] == row[0]);
+            element.coreProperties[corePtyGpName] = {};
+
+            if (corePtyRow == null) {
+                corePtyRow = [row[0], row[1], row[2], ...Array(configurationCustomPropertyMap.get(customPropertyGroupName).length).fill(null)];
+            }
+
+            corePtyMap.forEach(corePtyName => {
+                const corePtyVal = corePtyRow[corePropertySheets.get(corePtyGpName).headers.indexOf(corePtyName)];
+                if (corePtyVal?.trim()?.length > 0) {
+                    element.coreProperties[corePtyGpName][corePtyName] = corePtyVal?.trim();
+                }
+
+            });
+        });
+
+        if (element.classificationGroup.code != null && element.classificationGroup.name != null) {
+            const customPropertyGroupName = `${element.classificationGroup.code} ${element.classificationGroup.name}`;
+
+            if (configurationCustomPropertyMap.has(customPropertyGroupName)) {
+                let customPtyRow = customPropertySheets.get(customPropertyGroupName).values.find(customPtyRow => customPtyRow[0] == row[0]);
+                element.customProperties[customPropertyGroupName] = {};
+
+                if (customPtyRow == null) {
+                    customPtyRow = [row[0], ...Array(configurationCustomPropertyMap.get(customPropertyGroupName).length).fill(null)];
+                }
+
+                configurationCustomPropertyMap.get(customPropertyGroupName).forEach(customPtyName => {
+                    const customPtyVal = customPtyRow[customPropertySheets.get(customPropertyGroupName).headers.indexOf(customPtyName)];
+                    if (customPtyVal?.trim()?.length > 0) {
+                        element.customProperties[customPropertyGroupName][customPtyName] = customPtyVal?.trim();
+                    }
+                });
+            }
+        }
+
+        project.elements.push(element);
+    }
+
+    return project;
+}
 
 export const formatHeaderRequests = function (sheetId) {
     return [{
