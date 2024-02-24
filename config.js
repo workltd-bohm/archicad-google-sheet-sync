@@ -1,4 +1,5 @@
-import { DOMParser } from '@xmldom/xmldom'
+import { GoogleAuth } from "google-auth-library";
+import { DOMParser } from '@xmldom/xmldom';
 import { select, select1 } from 'xpath';
 import { readFileSync } from 'fs';
 import { homedir } from 'os';
@@ -51,3 +52,9 @@ export const classificationGroupOptionMap = select("/configuration/classificatio
 }, new Map());
 
 export const databaseConnectionUrl = select1("/configuration/database-connection/@url", configXmlDoc).value;
+
+export const googleAuth = new GoogleAuth({
+    scopes: [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"],
+});

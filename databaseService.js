@@ -1,6 +1,4 @@
-// mongodbService.js
-
-import { MongoClient, ObjectId } from 'mongodb';
+import { MongoClient } from 'mongodb';
 
 export const DatabaseService = class {
     constructor(uri, dbName) {
