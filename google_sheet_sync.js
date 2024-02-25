@@ -173,7 +173,7 @@ async function main(args) {
                 dbSchedule.externalUrl = spreadSheetMetaData.url;
             }
 
-            await SheetUtil.updateAllSheetData(sheetService, spreadSheetMetaData, dbSchedule, projectDtoFromFile);
+            await SheetUtil.syncAllSheetData(sheetService, spreadSheetMetaData, dbSchedule, projectDtoFromFile);
         }
 
         // Update the project record in the database, in case of changes in schedules sub-collection.

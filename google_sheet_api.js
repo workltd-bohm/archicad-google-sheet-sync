@@ -213,5 +213,5 @@ export class GoogleSheetService {
             numOfRows: sheet?.properties?.gridProperties?.rowCount,
             numOfColumns: sheet?.properties?.gridProperties?.columnCount
         };
-    };
+    }
 }

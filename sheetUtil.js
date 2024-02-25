@@ -169,19 +169,12 @@ export class SheetUtil {
         return [projectSheet, generalSheet, corePropertySheets, customPropertySheets];
     }
 
-    static async updateAllSheetData(sheetService, spreadSheetMetaData, scheduleMetaData, syncData) {
-        const [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await this.getAllSheetData(sheetService, spreadSheetMetaData);
-
+    static async syncAllSheetDataBatch(sheetService, spreadSheetMetaData, scheduleMetaData, generalSheet, corePropertySheets, customPropertySheets, elementDtos) {
         let changeSet = [];
         let extendRowSet = new Map();
 
-        changeSet.push({
-            range: `'${projectSheet.name}'!A1`,
-            values: [["Project Name", syncData.name]],
-        });
-
         // Compare the data and update the Google Sheet.
-        for (const element of syncData.elements) {
+        for (const element of elementDtos) {
             // Handle the "Element & Classification" sheet.
             const generalSheetRowData = this.composeGeneralSheetRow(scheduleMetaData.sheets.find(sheet => { return sheet.sheetType == "general" }), element);
             let generalSheetRowIndex = generalSheet.values.findIndex(row => row[0] == element.guid);
@@ -191,6 +184,9 @@ export class SheetUtil {
                 extendRowSet.set(generalSheet.name, extendRowSet.get(generalSheet.name) == null ? 1 : extendRowSet.get(generalSheet.name) + 1);
                 generalSheetRowIndex = generalSheet.values.length;
                 generalSheet.values.push(generalSheetRowData);
+            } else {
+                // Update the element in the "Element & Classification" sheet.
+                generalSheet.values[generalSheetRowIndex] = generalSheetRowData;
             }
 
             changeSet.push({
@@ -213,6 +209,8 @@ export class SheetUtil {
                     extendRowSet.set(corePropertyGroup.sheetName, extendRowSet.get(corePropertyGroup.sheetName) == null ? 1 : extendRowSet.get(corePropertyGroup.sheetName) + 1);
                     corePropertySheetRowIndex = corePropertySheet.values.length;
                     corePropertySheet.values.push(corePropertySheetRowData);
+                } else {
+                    corePropertySheet.values[corePropertySheetRowIndex] = corePropertySheetRowData;
                 }
 
                 changeSet.push({
@@ -238,6 +236,8 @@ export class SheetUtil {
                         extendRowSet.set(customPtyGpName, extendRowSet.get(customPtyGpName) == null ? 1 : extendRowSet.get(customPtyGpName) + 1);
                         customPropertySheetRowIndex = customPropertySheet.values.length;
                         customPropertySheet.values.push(customPropertySheetRowData);
+                    } else {
+                        customPropertySheet.values[customPropertySheetRowIndex] = customPropertySheetRowData;
                     }
 
                     changeSet.push({
@@ -277,12 +277,32 @@ export class SheetUtil {
             }
         });
         // Update and add new data to the sheets.
+    }
+
+    static async syncAllSheetData(sheetService, spreadSheetMetaData, scheduleMetaData, projectDto) {
+        let [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await this.getAllSheetData(sheetService, spreadSheetMetaData);
+
+        // changeSet.push({
+        //     range: `'${projectSheet.name}'!A1`,
+        //     values: [["Project Name", syncData.name]],
+        // });
+
+        const elementBatchSetCount = Math.ceil(projectDto.elements.length / 1000);
+
+        for (let i = 0; i < elementBatchSetCount; i++) {
+            const elementDtos = projectDto.elements.slice(i * 1000, (i + 1) * 1000);
+            await this.syncAllSheetDataBatch(sheetService, spreadSheetMetaData, scheduleMetaData, generalSheet, corePropertySheets, customPropertySheets, elementDtos);
+
+            console.log(`Processed ${(i + 1) * 1000} elements.`);
+        }
+
+
 
         // Remove the deleted elements from the sheets.
-        if (syncData.deletedElements.length > 0) {
+        if (projectDto.deletedElements.length > 0) {
             let deleteRowSet = new Map();
 
-            syncData.deletedElements.forEach(guid => {
+            projectDto.deletedElements.forEach(guid => {
                 let generalSheetRowIndex = generalSheet.values.findIndex(row => row[0] == guid);
 
                 if (generalSheetRowIndex > -1) {
