@@ -1,7 +1,10 @@
-import dayjs from 'dayjs';
-import { JSONPath } from 'jsonpath-plus';
+import dayjs from "dayjs";
+import pino from "pino";
+import { JSONPath } from "jsonpath-plus";
 import { GoogleSheetService } from "./google_sheet_api.js";
 import { configurationCorePropertyMap, configurationCustomPropertyMap, classificationOptionMap, classificationGroupOptionMap } from "./config.js";
+
+const logger = pino({ level: "info" });
 
 export class SheetUtil {
     static async composeProjectDtoFromSheets(sheetService, spreadSheetMetaData) {
@@ -184,9 +187,13 @@ export class SheetUtil {
                 extendRowSet.set(generalSheet.name, extendRowSet.get(generalSheet.name) == null ? 1 : extendRowSet.get(generalSheet.name) + 1);
                 generalSheetRowIndex = generalSheet.values.length;
                 generalSheet.values.push(generalSheetRowData);
+
+                logger.info(`Element [${element.guid}] is added in the general sheet [${generalSheet.name}].`);
             } else {
                 // Update the element in the "Element & Classification" sheet.
                 generalSheet.values[generalSheetRowIndex] = generalSheetRowData;
+
+                logger.info(`Element [${element.guid}] is updated in the general sheet [${generalSheet.name}].`);
             }
 
             changeSet.push({
@@ -209,8 +216,12 @@ export class SheetUtil {
                     extendRowSet.set(corePropertyGroup.sheetName, extendRowSet.get(corePropertyGroup.sheetName) == null ? 1 : extendRowSet.get(corePropertyGroup.sheetName) + 1);
                     corePropertySheetRowIndex = corePropertySheet.values.length;
                     corePropertySheet.values.push(corePropertySheetRowData);
+
+                    logger.info(`Element [${element.guid}] is added in the core property sheet [${corePropertyGroup.sheetName}].`);
                 } else {
                     corePropertySheet.values[corePropertySheetRowIndex] = corePropertySheetRowData;
+
+                    logger.info(`Element [${element.guid}] is updated in the core property sheet [${corePropertyGroup.sheetName}].`);
                 }
 
                 changeSet.push({
@@ -233,11 +244,15 @@ export class SheetUtil {
                     let customPropertySheetRowIndex = customPropertySheet.values.findIndex(row => row[0] == element.guid);
 
                     if (customPropertySheetRowIndex == -1) {
-                        extendRowSet.set(customPtyGpName, extendRowSet.get(customPtyGpName) == null ? 1 : extendRowSet.get(customPtyGpName) + 1);
+                        extendRowSet.set(customPropertySheet.name, extendRowSet.get(customPropertySheet.name) == null ? 1 : extendRowSet.get(customPropertySheet.name) + 1);
                         customPropertySheetRowIndex = customPropertySheet.values.length;
                         customPropertySheet.values.push(customPropertySheetRowData);
+
+                        logger.info(`Element [${element.guid}] is added in the custom property sheet [${customPropertySheet.name}].`);
                     } else {
                         customPropertySheet.values[customPropertySheetRowIndex] = customPropertySheetRowData;
+
+                        logger.info(`Element [${element.guid}] is updated in the custom property sheet [${customPropertySheet.name}].`);
                     }
 
                     changeSet.push({
@@ -265,6 +280,8 @@ export class SheetUtil {
                     })
                 }
             });
+
+            logger.info(`Completed to extend rows of the sheets.`);
         };
         // Extend the rows of the sheets before adding new data.
 
@@ -276,10 +293,14 @@ export class SheetUtil {
                 valueInputOption: "USER_ENTERED"
             }
         });
+
+        logger.info(`Completed to update and add new data to the sheets.`);
         // Update and add new data to the sheets.
     }
 
     static async syncAllSheetData(sheetService, spreadSheetMetaData, scheduleMetaData, projectDto) {
+        logger.info(`Started to retrieve all data of the spreadsheet [${spreadSheetMetaData.name}].`);
+
         let [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await this.getAllSheetData(sheetService, spreadSheetMetaData);
 
         // changeSet.push({
@@ -287,16 +308,20 @@ export class SheetUtil {
         //     values: [["Project Name", syncData.name]],
         // });
 
+        logger.info(`Completed to retrieve all data of the spreadsheet [${spreadSheetMetaData.name}].`);
+
         const elementBatchSetCount = Math.ceil(projectDto.elements.length / 1000);
 
+        logger.info(`Number of batches required to update ${projectDto.elements.length} elements: ${elementBatchSetCount}.`);
+
         for (let i = 0; i < elementBatchSetCount; i++) {
+            logger.info(`Started batch #${i} of elements to update in the spreadsheet [${spreadSheetMetaData.name}].`);
+
             const elementDtos = projectDto.elements.slice(i * 1000, (i + 1) * 1000);
             await this.syncAllSheetDataBatch(sheetService, spreadSheetMetaData, scheduleMetaData, generalSheet, corePropertySheets, customPropertySheets, elementDtos);
 
-            console.log(`Processed ${(i + 1) * 1000} elements.`);
+            logger.info(`Completed batch #${i} of elements to update in the spreadsheet [${spreadSheetMetaData.name}].`);
         }
-
-
 
         // Remove the deleted elements from the sheets.
         if (projectDto.deletedElements.length > 0) {
@@ -310,6 +335,8 @@ export class SheetUtil {
                         deleteRowSet.set(generalSheet.name, []);
                     }
                     deleteRowSet.get(generalSheet.name).push(generalSheetRowIndex + 1);
+
+                    logger.info(`Element [${guid}] is marked for deletion in the general sheet [${generalSheet.name}].`);
                 }
 
                 for (const corePtyGpName of configurationCorePropertyMap.keys()) {
@@ -321,6 +348,8 @@ export class SheetUtil {
                             deleteRowSet.set(corePropertySheet.name, []);
                         }
                         deleteRowSet.get(corePropertySheet.name).push(corePropertySheetRowIndex + 1);
+
+                        logger.info(`Element [${guid}] is marked for deletion in the core property sheet [${corePropertySheet.name}].`);
                     }
                 }
 
@@ -333,6 +362,8 @@ export class SheetUtil {
                             deleteRowSet.set(customPropertySheet.name, []);
                         }
                         deleteRowSet.get(customPropertySheet.name).push(customPropertySheetRowIndex + 1);
+
+                        logger.info(`Element [${guid}] is marked for deletion in the custom property sheet [${customPropertySheet.name}].`);
                     }
                 }
             });
@@ -358,11 +389,11 @@ export class SheetUtil {
                             })
                         }
                     });
+
+                    logger.info(`Completed to execute row deletions in sheet [${sheetName}].`);
                 }
             }
         }
-
-
         // Remove the deleted elements from the sheets.
     }
 

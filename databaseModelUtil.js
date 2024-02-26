@@ -26,10 +26,10 @@ export class DatabaseModelUtil {
     //     return dbProject;
     // };
 
-    static composeElementModelFromDto(elementDto) {
+    static composeElementModelFromDto(elementDto, projectCode) {
         let dbElement = {
             guid: elementDto.guid,
-            projectCode: elementDto.projectCode,
+            projectCode: projectCode,
             name: elementDto.name,
             type: elementDto.type,
             variation: elementDto.variation,
@@ -109,7 +109,7 @@ export class DatabaseModelUtil {
         return dbSnapshot;
     }
 
-    static composeProjectDtoFromModel(dbProject, dbElements) {
+    static composeProjectDtoFromModel(dbProject, dbElements, dbDeletedElementGuids) {
         let projectDto = {
             name: dbProject.name,
             code: dbProject.code,
@@ -121,8 +121,11 @@ export class DatabaseModelUtil {
             projectDto.elements.push(this.composeElementDtoFromModel(dbElement));
         });
 
-        return projectDto;
+        dbDeletedElementGuids.forEach(dbDeletedElementGuid => {
+            projectDto.deletedElements.push(dbDeletedElementGuid);
+        });
 
+        return projectDto;
     }
 
     static composeElementDtoFromModel(dbElement) {
