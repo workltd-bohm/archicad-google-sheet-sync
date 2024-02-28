@@ -434,7 +434,12 @@ export class SheetUtil {
         formattingRequests.push(...GoogleSheetService.formatHeaderRequests(spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.sheetName)?.id));
         formattingRequests.push(GoogleSheetService.dataValidationRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.sheetName)?.id, 1, 2, 3, `='[Reserved] Classification List'!A1:A${classificationOptionMap.size}`, "Select a classification."));
         formattingRequests.push(GoogleSheetService.dataValidationRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.sheetName)?.id, 1, 3, 4, `='[Reserved] Classification Group List'!A1:A${classificationGroupOptionMap.size}`, "Select a classification group."));
-        formattingRequests.push(GoogleSheetService.protectedRangeRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.sheetName)?.id, 1, 9, 10));
+
+        for (let i = 0; i < generalSheet.fields.length; i++) {
+            if (!generalSheet.fields[i].editable) {
+                formattingRequests.push(GoogleSheetService.protectedRangeRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.sheetName)?.id, 1, i, i + 1));
+            }
+        }
         //
         // Populate the general sheet with header and formatting.
         //
@@ -452,6 +457,12 @@ export class SheetUtil {
 
             formattingRequests.push(...GoogleSheetService.formatHeaderRequests(spreadSheetMetaData.sheets.find(sheet => sheet.name === coreSheet.sheetName)?.id));
             formattingRequests.push(GoogleSheetService.protectedRangeRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === coreSheet.sheetName)?.id, 1, 0, 3));
+
+            for (let i = 0; i < coreSheet.fields.length; i++) {
+                if (!coreSheet.fields[i].editable) {
+                    formattingRequests.push(GoogleSheetService.protectedRangeRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === coreSheet.sheetName)?.id, 1, i + 3, i + 4));
+                }
+            }
         }
         //
         // Populate the core property sheets with header and formatting.
@@ -469,6 +480,12 @@ export class SheetUtil {
             });
 
             formattingRequests.push(...GoogleSheetService.formatHeaderRequests(spreadSheetMetaData.sheets.find(sheet => sheet.name === customSheet.sheetName)?.id));
+
+            for (let i = 0; i < customSheet.fields.length; i++) {
+                if (!customSheet.fields[i].editable) {
+                    formattingRequests.push(GoogleSheetService.protectedRangeRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === customSheet.sheetName)?.id, 1, i + 1, i + 2));
+                }
+            }
         }
         //
         // Populate the custom property sheets with header and formatting.

@@ -223,7 +223,7 @@ async function main(args) {
                     dbSchedule.externalUrl = spreadSheetMetaData.url;
                 }
 
-                logger.info(`Schedule spreadsheet details: ${spreadSheetMetaData.name} / ${dbSchedule.externalId} / ${dbSchedule.externalUrl}.`);
+                logger.info(`Schedule spreadsheet details: ${spreadSheetMetaData.name} / ${dbSchedule.externalId} / ${dbSchedule.externalUrl}`);
 
                 await SheetUtil.syncAllSheetData(sheetService, spreadSheetMetaData, dbSchedule, xmlProjectDto);
             }
@@ -235,26 +235,35 @@ async function main(args) {
             //
             logger.info(`Completed the Google Sheets synchronization process.`);
         } else if (direction === "pull") {
+            logger.info(`Started the database synchronization process.`);
             //
             // Start database synchronization.
             //
             let dbActiveSchedules = dbProject.schedules.filter(schedule => schedule.externalId?.length > 0);
 
+            logger.info(`Active schedules to be synchronized in the database: ${dbActiveSchedules.length}`);
+
             for (const dbSchedule of dbActiveSchedules) {
                 const spreadSheetMetaData = await GoogleSheetService.getSpreadSheetProperty(sheetService, dbSchedule.externalId, true, true);
 
+                logger.info(`Started to synchronize schedule [${dbSchedule.name}].`);
+
                 if (spreadSheetMetaData == null) {
-                    console.error("Spreadsheet not found in Google Drive.");
+                    logger.error("Spreadsheet not found in Google Drive.");
                     continue;
                 }
 
+                logger.info(`Started to extract element information from schedule [${dbSchedule.name}].`);
+
                 const sheetProjectDto = await SheetUtil.composeProjectDtoFromSheets(sheetService, spreadSheetMetaData);
+
+                logger.info(`Completed to extract element information from schedule [${dbSchedule.name}].`);
 
                 for (const sheetElementDto of sheetProjectDto.elements) {
                     // Current workaround as Google Sheet does not have the project code.
                     sheetElementDto.projectCode = dbProject.code;
 
-                    console.log(`Check element ${sheetElementDto.guid}`);
+                    logger.info(`Comparing element [${sheetElementDto.guid}] in schedule [${dbSchedule.name}] and database.`);
 
                     const dbElement = await dbService.findOne("elements", { guid: sheetElementDto.guid });
 
@@ -285,7 +294,7 @@ async function main(args) {
 
                     // Apply changes to the database.
                     if (changeSet.length > 0) {
-                        console.log(`Element [${sheetElementDto.guid}]: ${changeSet.length} field(s) changed.`);
+                        logger.info(`Element [${sheetElementDto.guid}]: ${changeSet.length} field(s) changed.`);
 
                         // Create a snapshot of the current element record in database.
                         let dbElementSnapshot = DatabaseModelUtil.composeElementSnapshotFromModel(dbElement, "Schedule", `Updated from ${dbSchedule.name}`);
@@ -310,24 +319,30 @@ async function main(args) {
                 // End database synchronization.
                 //
 
-                //
-                // Start ArchiCAD synchronization.
-                //
-                const dbElementsForExport = await dbService.findMany("elements", { projectCode: dbProject.code });
-                const xmlProjectDto = DatabaseModelUtil.composeProjectDtoFromModel(dbProject, dbElementsForExport);
-                const projectXmlDoc = XmlFileUtil.composeXmlObjectFromDto(xmlProjectDto);
-
-                try {
-                    writeFileSync(dataFilePath, create({ encoding: "UTF-8", standalone: false }, projectXmlDoc).end({ prettyPrint: true }));
-
-                    console.log(`${dayjs().format('YYYY-MM-DD HH:mm:ss')}: ${dataFilePath} has been saved.`);
-                } catch (error) {
-                    console.error(error);
-                }
-                //
-                // End ArchiCAD synchronization.
-                //
+                logger.info(`Completed the database synchronization process.`);
             }
+
+            logger.info(`Started the ArchiCAD synchronization process.`);
+
+            //
+            // Start ArchiCAD synchronization.
+            //
+            const dbElementsForExport = await dbService.findMany("elements", { projectCode: dbProject.code });
+            const xmlProjectDto = DatabaseModelUtil.composeProjectDtoFromModel(dbProject, dbElementsForExport);
+            const projectXmlDoc = XmlFileUtil.composeXmlObjectFromDto(xmlProjectDto);
+
+            try {
+                writeFileSync(dataFilePath, create({ encoding: "UTF-8", standalone: false }, projectXmlDoc).end({ prettyPrint: true }));
+
+                console.log(`${dayjs().format('YYYY-MM-DD HH:mm:ss')}: ${dataFilePath} has been saved.`);
+            } catch (error) {
+                console.error(error);
+            }
+            //
+            // End ArchiCAD synchronization.
+            //
+
+            logger.info(`Completed the ArchiCAD synchronization process.`);
         }
     }
     catch (error) {

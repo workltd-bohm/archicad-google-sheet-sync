@@ -109,7 +109,7 @@ export class DatabaseModelUtil {
         return dbSnapshot;
     }
 
-    static composeProjectDtoFromModel(dbProject, dbElements, dbDeletedElementGuids) {
+    static composeProjectDtoFromModel(dbProject, dbElements, dbDeletedElementGuids = []) {
         let projectDto = {
             name: dbProject.name,
             code: dbProject.code,
