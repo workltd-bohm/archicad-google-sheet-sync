@@ -183,6 +183,6 @@ export class DatabaseModelUtil {
         if (classificationGroup?.code?.length > 0 && classificationGroup?.name?.length > 0) {
             return `${classificationGroup.code} ${classificationGroup.name}`;
         }
-        return null;
+        return "";
     }
 };

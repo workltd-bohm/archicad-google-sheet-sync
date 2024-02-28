@@ -281,9 +281,9 @@ async function main(args) {
                             (sheet.sheetType == "custom" && sheet.sheetName == sheetElementDto.classificationGroup.full))) {
                         for (const field of dbSheet.fields.filter(field => field.editable)) {
                             const sheetResult = JSONPath({ path: field.path, json: sheetElementDto });
-                            const sheetValue = sheetResult?.length > 0 && sheetResult[0] != null ? sheetResult[0] : null;
+                            const sheetValue = sheetResult?.length > 0 && sheetResult[0] != null ? sheetResult[0] : "";
                             const dbResult = JSONPath({ path: field.path, json: dbElement });
-                            const dbValue = dbResult?.length > 0 && dbResult[0] != null ? dbResult[0] : null;
+                            const dbValue = dbResult?.length > 0 && dbResult[0] != null ? dbResult[0] : "";
 
                             if (sheetValue != dbValue) {
                                 changeSet.push({ path: field.path, newValue: sheetValue });

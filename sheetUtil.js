@@ -310,17 +310,17 @@ export class SheetUtil {
 
         logger.info(`Completed to retrieve all data of the spreadsheet [${spreadSheetMetaData.name}].`);
 
-        const elementBatchSetCount = Math.ceil(projectDto.elements.length / 1000);
+        const elementBatchSetCount = Math.ceil(projectDto.elements.length / 100);
 
         logger.info(`Number of batches required to update ${projectDto.elements.length} elements: ${elementBatchSetCount}.`);
 
         for (let i = 0; i < elementBatchSetCount; i++) {
-            logger.info(`Started batch #${i} of elements to update in the spreadsheet [${spreadSheetMetaData.name}].`);
+            logger.info(`Started batch #${i + 1} of elements to update in the spreadsheet [${spreadSheetMetaData.name}].`);
 
-            const elementDtos = projectDto.elements.slice(i * 1000, (i + 1) * 1000);
+            const elementDtos = projectDto.elements.slice(i * 100, (i + 1) * 100);
             await this.syncAllSheetDataBatch(sheetService, spreadSheetMetaData, scheduleMetaData, generalSheet, corePropertySheets, customPropertySheets, elementDtos);
 
-            logger.info(`Completed batch #${i} of elements to update in the spreadsheet [${spreadSheetMetaData.name}].`);
+            logger.info(`Completed batch #${i + 1} of elements to update in the spreadsheet [${spreadSheetMetaData.name}].`);
         }
 
         // Remove the deleted elements from the sheets.

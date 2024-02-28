@@ -30,10 +30,10 @@ export class XmlFileUtil {
 
         select("/project/elements/element", xmlDoc).forEach(xmlElement => {
             let element = {
-                guid: select1("@guid", xmlElement).value,
-                name: select1("@name", xmlElement).value,
-                type: select1("@type", xmlElement).value,
-                variation: select1("@variation", xmlElement).value,
+                guid: select1("@guid", xmlElement)?.value,
+                name: select1("@name", xmlElement)?.value,
+                type: select1("@type", xmlElement)?.value,
+                variation: select1("@variation", xmlElement)?.value,
                 zone: null,
                 level: null,
                 geometry: { x: 0, y: 0, elevation: 0, rotatingAngle: 0.0 },
@@ -42,19 +42,19 @@ export class XmlFileUtil {
                 material: null,
                 finish: null,
                 mount: null,
-                modiStamp: select1("@modiStamp", xmlElement).value,
+                modiStamp: select1("@modiStamp", xmlElement)?.value,
                 classification: {
-                    code: select1("@code", select1("classification", xmlElement)).value,
-                    name: select1("@name", select1("classification", xmlElement)).value
+                    code: select1("@code", select1("classification", xmlElement))?.value,
+                    name: select1("@name", select1("classification", xmlElement))?.value
                 },
                 classificationGroup: {
-                    code: select1("@code", select1("classification-group", xmlElement)).value,
-                    name: select1("@name", select1("classification-group", xmlElement)).value
+                    code: select1("@code", select1("classification-group", xmlElement))?.value,
+                    name: select1("@name", select1("classification-group", xmlElement))?.value
                 },
                 libraryPart: {
-                    index: select1("@index", select1("library-part", xmlElement)).value,
-                    documentName: select1("@documentName", select1("library-part", xmlElement)).value,
-                    uniqueId: select1("@uniqueId", select1("library-part", xmlElement)).value
+                    index: select1("@index", select1("library-part", xmlElement))?.value,
+                    documentName: select1("@documentName", select1("library-part", xmlElement))?.value,
+                    uniqueId: select1("@uniqueId", select1("library-part", xmlElement))?.value
                 },
                 token: {
                     fungible: false,
@@ -72,7 +72,7 @@ export class XmlFileUtil {
                 element.coreProperties[corePtyGpName] = {};
                 corePtyMap.forEach(corePtyName => {
                     const corePtyNode = select1(`core-property-groups/group[@name="${corePtyGpName}"]/property[@name="${corePtyName}"]/@value`, xmlElement);
-                    element.coreProperties[corePtyGpName][corePtyName] = corePtyNode == null ? null : corePtyNode.value;
+                    element.coreProperties[corePtyGpName][corePtyName] = corePtyNode == undefined || corePtyNode == null ? null : corePtyNode.value;
                 });
             });
 
@@ -83,7 +83,7 @@ export class XmlFileUtil {
                 if (configurationCustomPropertyMap.has(customPropertyGroupName)) {
                     configurationCustomPropertyMap.get(customPropertyGroupName).forEach(customPtyName => {
                         const customPtyNode = select1(`custom-property-groups/group[@name="${customPropertyGroupName}"]/property[@name="${customPtyName}"]/@value`, xmlElement);
-                        element.customProperties[customPropertyGroupName][customPtyName] = customPtyNode == null ? null : customPtyNode.value;
+                        element.customProperties[customPropertyGroupName][customPtyName] = customPtyNode == undefined || customPtyNode == null ? null : customPtyNode.value;
                     });
                 }
             }
@@ -91,8 +91,8 @@ export class XmlFileUtil {
             projectDto.elements.push(element);
         });
 
-        select("/project/deleted-elements/element", xmlDoc).forEach(xmlElement => {
-            projectDto.deletedElements.push(select1("@guid", xmlElement).value);
+        select("/project/deleted-elements/element", xmlDoc)?.forEach(xmlElement => {
+            projectDto.deletedElements.push(select1("@guid", xmlElement)?.value);
         });
 
         return projectDto;
