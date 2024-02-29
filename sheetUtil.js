@@ -297,9 +297,9 @@ export class SheetUtil {
             }
         }
 
-        console.log(`Completed to prepare data for the spreadsheet [${spreadSheetMetaData.name}].`);
+        logger.info(`Completed to prepare data for the spreadsheet [${spreadSheetMetaData.name}].`);
 
-        console.log(`Started to populate the data into the spreadsheet [${spreadSheetMetaData.name}].`);
+        logger.info(`Started to populate the data into the spreadsheet [${spreadSheetMetaData.name}].`);
 
         const auth = new GoogleAuth({
             scopes: [
@@ -354,7 +354,7 @@ export class SheetUtil {
             await this.wait(5000);
         }
 
-        console.log(`Completed to populate the data into the spreadsheet [${spreadSheetMetaData.name}].`);
+        logger.info(`Completed to populate the data into the spreadsheet [${spreadSheetMetaData.name}].`);
     }
 
     static async createSpreadsheet(driveService, sheetService, scheduleMetaData, projectName) {
