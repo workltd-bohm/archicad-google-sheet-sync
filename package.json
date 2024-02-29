@@ -16,6 +16,7 @@
     "google-auth-library": "^9.2.0",
     "googleapis": "^128.0.0",
     "jsonpath-plus": "^8.0.0",
+    "log4js": "^6.9.1",
     "mongodb": "^6.3.0",
     "pino": "^8.19.0",
     "xmlbuilder2": "^3.1.1",

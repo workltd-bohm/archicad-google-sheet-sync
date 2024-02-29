@@ -183,11 +183,18 @@ async function main(args) {
 
             logger.info(`Completed the database synchronization process.`);
 
-            logger.info(`Started the Google Sheets synchronization process.`);
-
             //
             // Start Google Sheet synchronization.
             //
+            logger.info(`Started the Google Sheets synchronization process.`);
+
+            logger.info(`Started to retrieve all elements with up-to-date data from the database.`);
+
+            const dbElementsForExport = await dbService.findMany("elements", { projectCode: dbProject.code })
+            const xmlProjectDto = DatabaseModelUtil.composeProjectDtoFromModel(dbProject, dbElementsForExport, dbDeletedElements.map(dbElement => { return dbElement.guid; }));
+
+            logger.info(`Completed to retrieve all elements with up-to-date data from the database.`);
+
             let dbSchedules = dbProject.schedules;
 
             logger.info(`Schedules to be synchronized in Google Sheets: ${dbSchedules.length}`);
@@ -195,22 +202,9 @@ async function main(args) {
             for (const dbSchedule of dbSchedules) {
                 logger.info(`Started to synchronize schedule [${dbSchedule.name}].`);
 
-                const isExistingSchedule = dbSchedule.externalId?.length > 0;
-
-                const spreadSheetMetaData = isExistingSchedule ?
+                const spreadSheetMetaData = dbSchedule.externalId?.length > 0 ?
                     await GoogleSheetService.getSpreadSheetProperty(sheetService, dbSchedule.externalId, true, true) :
                     await SheetUtil.createSpreadsheet(driveService, sheetService, dbSchedule, dbProject.name);
-
-                const dbElementsForExport = isExistingSchedule ?
-                    await dbService.findMany("elements", {
-                        guid: {
-                            $in:
-                                [...dbElements.map(element => { return element.guid; }),
-                                ...newElementDtosFromFile.map(element => { return element.guid; })]
-                        }
-                    }) :
-                    await dbService.findMany("elements", { projectCode: dbProject.code });
-                const xmlProjectDto = DatabaseModelUtil.composeProjectDtoFromModel(dbProject, dbElementsForExport, dbDeletedElements.map(dbElement => { return dbElement.guid; }));
 
                 if (spreadSheetMetaData == null) {
                     console.error("Spreadsheet cannot be created or retrieved in Google Drive.");
@@ -255,7 +249,7 @@ async function main(args) {
 
                 logger.info(`Started to extract element information from schedule [${dbSchedule.name}].`);
 
-                const sheetProjectDto = await SheetUtil.composeProjectDtoFromSheets(sheetService, spreadSheetMetaData);
+                const sheetProjectDto = await SheetUtil.composeProjectDtoFromSheets(sheetService, spreadSheetMetaData, dbSchedule);
 
                 logger.info(`Completed to extract element information from schedule [${dbSchedule.name}].`);
 
@@ -280,10 +274,8 @@ async function main(args) {
                             sheet.sheetType == "general" ||
                             (sheet.sheetType == "custom" && sheet.sheetName == sheetElementDto.classificationGroup.full))) {
                         for (const field of dbSheet.fields.filter(field => field.editable)) {
-                            const sheetResult = JSONPath({ path: field.path, json: sheetElementDto });
-                            const sheetValue = sheetResult?.length > 0 && sheetResult[0] != null ? sheetResult[0] : "";
-                            const dbResult = JSONPath({ path: field.path, json: dbElement });
-                            const dbValue = dbResult?.length > 0 && dbResult[0] != null ? dbResult[0] : "";
+                            const sheetValue = SheetUtil.getValueByPath(sheetElementDto, field.path);
+                            const dbValue = SheetUtil.getValueByPath(dbElement, field.path);
 
                             if (sheetValue != dbValue) {
                                 changeSet.push({ path: field.path, newValue: sheetValue });
@@ -300,17 +292,14 @@ async function main(args) {
                         let dbElementSnapshot = DatabaseModelUtil.composeElementSnapshotFromModel(dbElement, "Schedule", `Updated from ${dbSchedule.name}`);
                         await dbService.insertOne("elementSnapshots", dbElementSnapshot);
 
+
+
                         // Update the element record in the database.
                         for (const field of changeSet) {
-                            await JSONPath({
-                                path: field.path, json: dbElement, resultType: 'all',
-                                callback: (value, _, { parent, parentProperty }) => {
-                                    parent[parentProperty] = field.newValue;
-                                }
-                            });
+                            SheetUtil.setValueByPath(dbElement, field.path, field.newValue);
                         }
 
-                        await dbService.updateOne("elements", { guid: sheetElementDto.guid }, dbElement);
+                        await dbService.replaceOne("elements", { guid: sheetElementDto.guid }, dbElement);
                         // Update the dbElement in the database.
                     }
                     // Apply changes to the database.
@@ -334,7 +323,7 @@ async function main(args) {
             try {
                 writeFileSync(dataFilePath, create({ encoding: "UTF-8", standalone: false }, projectXmlDoc).end({ prettyPrint: true }));
 
-                console.log(`${dayjs().format('YYYY-MM-DD HH:mm:ss')}: ${dataFilePath} has been saved.`);
+                logger.info(`${dayjs().format('YYYY-MM-DD HH:mm:ss')}: ${dataFilePath} has been saved.`);
             } catch (error) {
                 console.error(error);
             }

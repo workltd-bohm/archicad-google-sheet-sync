@@ -1,15 +1,17 @@
 import dayjs from "dayjs";
 import pino from "pino";
 import { JSONPath } from "jsonpath-plus";
+import { GoogleAuth } from "google-auth-library";
+import { google } from "googleapis";
 import { GoogleSheetService } from "./google_sheet_api.js";
 import { configurationCorePropertyMap, configurationCustomPropertyMap, classificationOptionMap, classificationGroupOptionMap } from "./config.js";
 
 const logger = pino({ level: "info" });
 
 export class SheetUtil {
-    static async composeProjectDtoFromSheets(sheetService, spreadSheetMetaData) {
+    static async composeProjectDtoFromSheets(sheetService, spreadSheetMetaData, scheduleMetadata) {
 
-        const [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await this.getAllSheetData(sheetService, spreadSheetMetaData);
+        const [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await this.getAllSheetData(sheetService, spreadSheetMetaData, scheduleMetadata);
 
         let project = {
             name: null,
@@ -71,15 +73,15 @@ export class SheetUtil {
             element.classificationGroup.full = (element.classificationGroup.code + ' ' + element.classificationGroup.name).trim();
 
             configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
-                let corePtyRow = corePropertySheets.get(corePtyGpName).values.find(corePtyRow => corePtyRow[0] == row[0]);
+                let corePtyRow = corePropertySheets.get(corePtyGpName)?.values?.find(corePtyRow => corePtyRow[0] == row[0]);
                 element.coreProperties[corePtyGpName] = {};
 
                 if (corePtyRow == null) {
-                    corePtyRow = [row[0], row[1], row[2], ...Array(configurationCustomPropertyMap.get(customPropertyGroupName).length).fill(null)];
+                    corePtyRow = [row[0], row[1], row[2], ...Array(configurationCustomPropertyMap.get(corePtyGpName)?.length).fill(null)];
                 }
 
                 corePtyMap.forEach(corePtyName => {
-                    const corePtyVal = corePtyRow[corePropertySheets.get(corePtyGpName).headers.indexOf(corePtyName)];
+                    const corePtyVal = corePtyRow[corePropertySheets.get(corePtyGpName)?.headers?.indexOf(corePtyName)];
                     if (corePtyVal?.trim()?.length > 0) {
                         element.coreProperties[corePtyGpName][corePtyName] = corePtyVal?.trim();
                     }
@@ -91,15 +93,15 @@ export class SheetUtil {
                 const customPropertyGroupName = `${element.classificationGroup.code} ${element.classificationGroup.name}`;
 
                 if (configurationCustomPropertyMap.has(customPropertyGroupName)) {
-                    let customPtyRow = customPropertySheets.get(customPropertyGroupName).values.find(customPtyRow => customPtyRow[0] == row[0]);
+                    let customPtyRow = customPropertySheets.get(customPropertyGroupName)?.values?.find(customPtyRow => customPtyRow[0] == row[0]);
                     element.customProperties[customPropertyGroupName] = {};
 
                     if (customPtyRow == null) {
-                        customPtyRow = [row[0], ...Array(configurationCustomPropertyMap.get(customPropertyGroupName).length).fill(null)];
+                        customPtyRow = [row[0], ...Array(configurationCustomPropertyMap.get(customPropertyGroupName)?.length).fill(null)];
                     }
 
-                    configurationCustomPropertyMap.get(customPropertyGroupName).forEach(customPtyName => {
-                        const customPtyVal = customPtyRow[customPropertySheets.get(customPropertyGroupName).headers.indexOf(customPtyName)];
+                    configurationCustomPropertyMap.get(customPropertyGroupName)?.forEach(customPtyName => {
+                        const customPtyVal = customPtyRow[customPropertySheets.get(customPropertyGroupName)?.headers?.indexOf(customPtyName)];
                         if (customPtyVal?.trim()?.length > 0) {
                             element.customProperties[customPropertyGroupName][customPtyName] = customPtyVal?.trim();
                         }
@@ -117,8 +119,9 @@ export class SheetUtil {
         let row = [];
 
         for (const field of sheetMetaData.fields) {
-            const result = JSONPath({ path: field.path, json: element });
-            const value = result?.length > 0 && result[0] != null ? result[0] : "";
+            const value = this.getValueByPath(element, field.path);
+            // const result = JSONPath({ path: field.path, json: element });
+            // const value = result?.length > 0 && result[0] != null ? result[0] : "";
             row.push(value);
         }
 
@@ -131,8 +134,9 @@ export class SheetUtil {
             `='Element Name & Classification'!B${generalSheetRowIndex + 2}`,
             `='Element Name & Classification'!C${generalSheetRowIndex + 2}`,
             ...sheetMetaData.fields.map(field => {
-                const result = JSONPath({ path: field.path, json: element });
-                const value = result?.length > 0 && result[0] != null ? result[0] : "";
+                // const result = JSONPath({ path: field.path, json: element });
+                // const value = result?.length > 0 && result[0] != null ? result[0] : "";
+                const value = this.getValueByPath(element, field.path);
                 return value;
             })
         ];
@@ -144,8 +148,9 @@ export class SheetUtil {
         let row = [
             element.guid,
             ...sheetMetaData.fields.map(field => {
-                const result = JSONPath({ path: field.path, json: element });
-                const value = result?.length > 0 && result[0] != null ? result[0] : "";
+                // const result = JSONPath({ path: field.path, json: element });
+                // const value = result?.length > 0 && result[0] != null ? result[0] : "";
+                const value = this.getValueByPath(element, field.path);
                 return value;
             })
         ];
@@ -153,155 +158,32 @@ export class SheetUtil {
         return row;
     }
 
-    static async getAllSheetData(sheetService, spreadSheetMetaData) {
+    static async getAllSheetData(sheetService, spreadSheetMetaData, scheduleMetaData) {
         const projectSheet = await GoogleSheetService.getSheetData(sheetService, spreadSheetMetaData, "Project Information", false);
         const generalSheet = await GoogleSheetService.getSheetData(sheetService, spreadSheetMetaData, "Element Name & Classification", true);
 
         let corePropertySheets = new Map();
         let customPropertySheets = new Map();
 
+        const corePropertyGroupsMetadata = scheduleMetaData.sheets.filter(sheet => { return sheet.sheetType == "core" });
 
-        for (const corePtyGpName of configurationCorePropertyMap.keys()) {
-            corePropertySheets.set(corePtyGpName, await GoogleSheetService.getSheetData(sheetService, spreadSheetMetaData, corePtyGpName, true));
+        for (const corePropertyGroupMetadata of corePropertyGroupsMetadata) {
+            corePropertySheets.set(corePropertyGroupMetadata.sheetName, await GoogleSheetService.getSheetData(sheetService, spreadSheetMetaData, corePropertyGroupMetadata.sheetName, true));
         }
 
-        for (const customPtyGpName of configurationCustomPropertyMap.keys()) {
-            customPropertySheets.set(customPtyGpName, await GoogleSheetService.getSheetData(sheetService, spreadSheetMetaData, customPtyGpName, true));
+        const customPropertyGroupsMetadata = scheduleMetaData.sheets.filter(sheet => { return sheet.sheetType == "custom" });
+
+        for (const customPropertyGroupMetadata of customPropertyGroupsMetadata) {
+            customPropertySheets.set(customPropertyGroupMetadata.sheetName, await GoogleSheetService.getSheetData(sheetService, spreadSheetMetaData, customPropertyGroupMetadata.sheetName, true));
         }
 
         return [projectSheet, generalSheet, corePropertySheets, customPropertySheets];
     }
 
-    static async syncAllSheetDataBatch(sheetService, spreadSheetMetaData, scheduleMetaData, generalSheet, corePropertySheets, customPropertySheets, elementDtos) {
-        let changeSet = [];
-        let extendRowSet = new Map();
-
-        // Compare the data and update the Google Sheet.
-        for (const element of elementDtos) {
-            // Handle the "Element & Classification" sheet.
-            const generalSheetRowData = this.composeGeneralSheetRow(scheduleMetaData.sheets.find(sheet => { return sheet.sheetType == "general" }), element);
-            let generalSheetRowIndex = generalSheet.values.findIndex(row => row[0] == element.guid);
-
-            if (generalSheetRowIndex == -1) {
-                // Add the element to the "Element & Classification" sheet.
-                extendRowSet.set(generalSheet.name, extendRowSet.get(generalSheet.name) == null ? 1 : extendRowSet.get(generalSheet.name) + 1);
-                generalSheetRowIndex = generalSheet.values.length;
-                generalSheet.values.push(generalSheetRowData);
-
-                logger.info(`Element [${element.guid}] is added in the general sheet [${generalSheet.name}].`);
-            } else {
-                // Update the element in the "Element & Classification" sheet.
-                generalSheet.values[generalSheetRowIndex] = generalSheetRowData;
-
-                logger.info(`Element [${element.guid}] is updated in the general sheet [${generalSheet.name}].`);
-            }
-
-            changeSet.push({
-                range: `'${generalSheet.name}'!A${generalSheetRowIndex + 2}`,
-                values: [generalSheetRowData],
-            });
-
-            // Handle the "Element & Classification" sheet.
-
-            // Handle the core property sheets.
-
-            const corePropertyGroups = scheduleMetaData.sheets.filter(sheet => { return sheet.sheetType == "core" });
-
-            for (const corePropertyGroup of corePropertyGroups) {
-                const corePropertySheet = corePropertySheets.get(corePropertyGroup.sheetName);
-                let corePropertySheetRowData = this.composeCorePropertySheetRow(generalSheetRowIndex, corePropertyGroup, element);
-                let corePropertySheetRowIndex = corePropertySheet.values.findIndex(row => row[0] == element.guid);
-
-                if (corePropertySheetRowIndex == -1) {
-                    extendRowSet.set(corePropertyGroup.sheetName, extendRowSet.get(corePropertyGroup.sheetName) == null ? 1 : extendRowSet.get(corePropertyGroup.sheetName) + 1);
-                    corePropertySheetRowIndex = corePropertySheet.values.length;
-                    corePropertySheet.values.push(corePropertySheetRowData);
-
-                    logger.info(`Element [${element.guid}] is added in the core property sheet [${corePropertyGroup.sheetName}].`);
-                } else {
-                    corePropertySheet.values[corePropertySheetRowIndex] = corePropertySheetRowData;
-
-                    logger.info(`Element [${element.guid}] is updated in the core property sheet [${corePropertyGroup.sheetName}].`);
-                }
-
-                changeSet.push({
-                    range: `'${corePropertySheet.name}'!A${corePropertySheetRowIndex + 2}`,
-                    values: [corePropertySheetRowData],
-                });
-            }
-            // Handle the core property sheets.
-
-            // Handle the custom property sheet.
-            if (Object.keys(element.customProperties).length > 0) {
-                for (const customPtyGpName of Object.keys(element.customProperties)) {
-                    if (!configurationCustomPropertyMap.has(customPtyGpName)) {
-                        continue;
-                    }
-
-                    const customPropertyGroup = scheduleMetaData.sheets.find(sheet => { return sheet.sheetType == "custom" && sheet.sheetName == customPtyGpName });
-                    const customPropertySheet = customPropertySheets.get(customPtyGpName);
-                    let customPropertySheetRowData = this.composeCustomPropertySheetRow(customPropertyGroup, element);
-                    let customPropertySheetRowIndex = customPropertySheet.values.findIndex(row => row[0] == element.guid);
-
-                    if (customPropertySheetRowIndex == -1) {
-                        extendRowSet.set(customPropertySheet.name, extendRowSet.get(customPropertySheet.name) == null ? 1 : extendRowSet.get(customPropertySheet.name) + 1);
-                        customPropertySheetRowIndex = customPropertySheet.values.length;
-                        customPropertySheet.values.push(customPropertySheetRowData);
-
-                        logger.info(`Element [${element.guid}] is added in the custom property sheet [${customPropertySheet.name}].`);
-                    } else {
-                        customPropertySheet.values[customPropertySheetRowIndex] = customPropertySheetRowData;
-
-                        logger.info(`Element [${element.guid}] is updated in the custom property sheet [${customPropertySheet.name}].`);
-                    }
-
-                    changeSet.push({
-                        range: `'${customPropertySheet.name}'!A${customPropertySheetRowIndex + 2}`,
-                        values: [customPropertySheetRowData],
-                    });
-                }
-            }
-            // Handle the custom property sheet.
-        }
-
-        // Extend the rows of the sheets before adding new data.
-        if (extendRowSet.size > 0) {
-            const response = await sheetService.batchUpdate({
-                spreadsheetId: spreadSheetMetaData.id,
-                resource: {
-                    requests: Array.from(extendRowSet.entries()).map(([sheetName, extendRowCount]) => {
-                        return {
-                            appendDimension: {
-                                sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === sheetName)?.id,
-                                dimension: "ROWS",
-                                length: extendRowCount
-                            }
-                        };
-                    })
-                }
-            });
-
-            logger.info(`Completed to extend rows of the sheets.`);
-        };
-        // Extend the rows of the sheets before adding new data.
-
-        // Update and add new data to the sheets.
-        const response = await sheetService.values.batchUpdate({
-            spreadsheetId: spreadSheetMetaData.id,
-            resource: {
-                data: changeSet,
-                valueInputOption: "USER_ENTERED"
-            }
-        });
-
-        logger.info(`Completed to update and add new data to the sheets.`);
-        // Update and add new data to the sheets.
-    }
-
     static async syncAllSheetData(sheetService, spreadSheetMetaData, scheduleMetaData, projectDto) {
         logger.info(`Started to retrieve all data of the spreadsheet [${spreadSheetMetaData.name}].`);
 
-        let [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await this.getAllSheetData(sheetService, spreadSheetMetaData);
+        let [projectSheet, generalSheet, corePropertySheets, customPropertySheets] = await this.getAllSheetData(sheetService, spreadSheetMetaData, scheduleMetaData);
 
         // changeSet.push({
         //     range: `'${projectSheet.name}'!A1`,
@@ -310,91 +192,169 @@ export class SheetUtil {
 
         logger.info(`Completed to retrieve all data of the spreadsheet [${spreadSheetMetaData.name}].`);
 
-        const elementBatchSetCount = Math.ceil(projectDto.elements.length / 100);
+        logger.info(`Start to delete all data from the spreadsheet [${spreadSheetMetaData.name}].`);
 
-        logger.info(`Number of batches required to update ${projectDto.elements.length} elements: ${elementBatchSetCount}.`);
-
-        for (let i = 0; i < elementBatchSetCount; i++) {
-            logger.info(`Started batch #${i + 1} of elements to update in the spreadsheet [${spreadSheetMetaData.name}].`);
-
-            const elementDtos = projectDto.elements.slice(i * 100, (i + 1) * 100);
-            await this.syncAllSheetDataBatch(sheetService, spreadSheetMetaData, scheduleMetaData, generalSheet, corePropertySheets, customPropertySheets, elementDtos);
-
-            logger.info(`Completed batch #${i + 1} of elements to update in the spreadsheet [${spreadSheetMetaData.name}].`);
-        }
-
-        // Remove the deleted elements from the sheets.
-        if (projectDto.deletedElements.length > 0) {
-            let deleteRowSet = new Map();
-
-            projectDto.deletedElements.forEach(guid => {
-                let generalSheetRowIndex = generalSheet.values.findIndex(row => row[0] == guid);
-
-                if (generalSheetRowIndex > -1) {
-                    if (!deleteRowSet.has(generalSheet.name)) {
-                        deleteRowSet.set(generalSheet.name, []);
-                    }
-                    deleteRowSet.get(generalSheet.name).push(generalSheetRowIndex + 1);
-
-                    logger.info(`Element [${guid}] is marked for deletion in the general sheet [${generalSheet.name}].`);
-                }
-
-                for (const corePtyGpName of configurationCorePropertyMap.keys()) {
-                    const corePropertySheet = corePropertySheets.get(corePtyGpName);
-                    let corePropertySheetRowIndex = corePropertySheet.values.findIndex(row => row[0] == guid);
-
-                    if (corePropertySheetRowIndex > -1) {
-                        if (!deleteRowSet.has(corePropertySheet.name)) {
-                            deleteRowSet.set(corePropertySheet.name, []);
+        const responseGeneralSheetCleanup = await sheetService.batchUpdate({
+            spreadsheetId: spreadSheetMetaData.id,
+            resource: {
+                requests: [
+                    {
+                        deleteDimension: {
+                            range: {
+                                sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.name)?.id,
+                                dimension: "ROWS",
+                                startIndex: 1,
+                                endIndex: generalSheet.values.length + 2
+                            }
                         }
-                        deleteRowSet.get(corePropertySheet.name).push(corePropertySheetRowIndex + 1);
-
-                        logger.info(`Element [${guid}] is marked for deletion in the core property sheet [${corePropertySheet.name}].`);
                     }
-                }
+                ]
+            }
+        });
 
-                for (const customPtyGpName of configurationCustomPropertyMap.keys()) {
-                    const customPropertySheet = customPropertySheets.get(customPtyGpName);
-                    let customPropertySheetRowIndex = customPropertySheet.values.findIndex(row => row[0] == guid);
+        generalSheet.values = [];
 
-                    if (customPropertySheetRowIndex > -1) {
-                        if (!deleteRowSet.has(customPropertySheet.name)) {
-                            deleteRowSet.set(customPropertySheet.name, []);
+        for (const corePropertySheetName of corePropertySheets.keys()) {
+            const responseCoreSheetCleanup = await sheetService.batchUpdate({
+                spreadsheetId: spreadSheetMetaData.id,
+                resource: {
+                    requests: [
+                        {
+                            deleteDimension: {
+                                range: {
+                                    sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === corePropertySheetName)?.id,
+                                    dimension: "ROWS",
+                                    startIndex: 1,
+                                    endIndex: corePropertySheets.get(corePropertySheetName).values.length + 2
+                                }
+                            }
                         }
-                        deleteRowSet.get(customPropertySheet.name).push(customPropertySheetRowIndex + 1);
-
-                        logger.info(`Element [${guid}] is marked for deletion in the custom property sheet [${customPropertySheet.name}].`);
-                    }
+                    ]
                 }
             });
 
-            if (deleteRowSet.size > 0) {
-                for (let [sheetName, deleteRowIndexList] of deleteRowSet.entries()) {
-                    deleteRowIndexList.sort((a, b) => b - a);
+            corePropertySheets.get(corePropertySheetName).values = [];
+        }
 
-                    const response = await sheetService.batchUpdate({
-                        spreadsheetId: spreadSheetMetaData.id,
-                        resource: {
-                            requests: deleteRowIndexList.map(deleteRowIndex => {
-                                return {
-                                    deleteDimension: {
-                                        range: {
-                                            sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === sheetName)?.id,
-                                            dimension: "ROWS",
-                                            startIndex: deleteRowIndex,
-                                            endIndex: deleteRowIndex + 1
-                                        }
-                                    }
-                                };
-                            })
+        for (const customPropertySheetName of customPropertySheets.keys()) {
+            const responseCustomSheetCleanup = await sheetService.batchUpdate({
+                spreadsheetId: spreadSheetMetaData.id,
+                resource: {
+                    requests: [
+                        {
+                            deleteDimension: {
+                                range: {
+                                    sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === customPropertySheetName)?.id,
+                                    dimension: "ROWS",
+                                    startIndex: 1,
+                                    endIndex: customPropertySheets.get(customPropertySheetName).values.length + 2
+                                }
+                            }
                         }
-                    });
+                    ]
+                }
+            });
 
-                    logger.info(`Completed to execute row deletions in sheet [${sheetName}].`);
+            customPropertySheets.get(customPropertySheetName).values = [];
+        }
+
+        logger.info(`Completed to delete all data from the spreadsheet [${spreadSheetMetaData.name}].`);
+
+        logger.info(`Started to prepare data for the spreadsheet [${spreadSheetMetaData.name}].`);
+
+        for (const element of projectDto.elements) {
+            // Handle the "Element & Classification" sheet.
+            const generalSheetMetadata = scheduleMetaData.sheets.find(sheet => { return sheet.sheetType == "general" });
+            const generalSheetRowData = this.composeGeneralSheetRow(generalSheetMetadata, element);
+            generalSheet.values.push(generalSheetRowData);
+            const generalSheetRowIndex = generalSheet.values.length - 1;
+
+            const corePropertyGroupsMetadata = scheduleMetaData.sheets.filter(sheet => { return sheet.sheetType == "core" });
+
+            for (const corePropertyGroupMetadata of corePropertyGroupsMetadata) {
+                const corePropertySheet = corePropertySheets.get(corePropertyGroupMetadata.sheetName);
+                let corePropertySheetRowData = this.composeCorePropertySheetRow(generalSheetRowIndex, corePropertyGroupMetadata, element);
+                corePropertySheet.values.push(corePropertySheetRowData);
+            }
+
+            // Handle the custom property sheet.
+            if (Object.keys(element.customProperties).length > 0) {
+                for (const customPtyGpName of Object.keys(element.customProperties)) {
+                    if (!configurationCustomPropertyMap.has(customPtyGpName)) {
+                        continue;
+                    }
+
+                    const customPropertyGroupMetadata = scheduleMetaData.sheets.find(sheet => { return sheet.sheetType == "custom" && sheet.sheetName == customPtyGpName });
+
+                    if (customPropertyGroupMetadata == undefined || customPropertyGroupMetadata == null) {
+                        continue;
+                    }
+
+                    const customPropertySheet = customPropertySheets.get(customPtyGpName);
+                    let customPropertySheetRowData = this.composeCustomPropertySheetRow(customPropertyGroupMetadata, element);
+                    customPropertySheet.values.push(customPropertySheetRowData);
                 }
             }
         }
-        // Remove the deleted elements from the sheets.
+
+        console.log(`Completed to prepare data for the spreadsheet [${spreadSheetMetaData.name}].`);
+
+        console.log(`Started to populate the data into the spreadsheet [${spreadSheetMetaData.name}].`);
+
+        const auth = new GoogleAuth({
+            scopes: [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"],
+        });
+
+
+
+        const testService = google.sheets({ version: "v4", auth }).spreadsheets;
+
+        const responsePopulateGeneralSheet = await testService.values.batchUpdate({
+            spreadsheetId: spreadSheetMetaData.id,
+            resource: {
+                data: {
+                    range: `'${generalSheet.name}'!A2`,
+                    values: generalSheet.values,
+                },
+                valueInputOption: "USER_ENTERED"
+            }
+        });
+
+        await this.wait(5000);
+
+        for (const corePropertySheetName of corePropertySheets.keys()) {
+            const responsePopulateCoreSheet = await sheetService.values.batchUpdate({
+                spreadsheetId: spreadSheetMetaData.id,
+                resource: {
+                    data: {
+                        range: `'${corePropertySheetName}'!A2`,
+                        values: corePropertySheets.get(corePropertySheetName).values,
+                    },
+                    valueInputOption: "USER_ENTERED"
+                }
+            });
+
+            await this.wait(5000);
+        }
+
+        for (const customPropertySheetName of customPropertySheets.keys()) {
+            const responsePopulateCustomSheet = await sheetService.values.batchUpdate({
+                spreadsheetId: spreadSheetMetaData.id,
+                resource: {
+                    data: {
+                        range: `'${customPropertySheetName}'!A2`,
+                        values: customPropertySheets.get(customPropertySheetName).values,
+                    },
+                    valueInputOption: "USER_ENTERED"
+                }
+            });
+
+            await this.wait(5000);
+        }
+
+        console.log(`Completed to populate the data into the spreadsheet [${spreadSheetMetaData.name}].`);
     }
 
     static async createSpreadsheet(driveService, sheetService, scheduleMetaData, projectName) {
@@ -402,9 +362,6 @@ export class SheetUtil {
             scheduleMetaData.sheets.find(sheet => sheet.sheetType == "general").sheetName,
             ...scheduleMetaData.sheets.filter(sheet => sheet.sheetType == "core").map(sheet => sheet.sheetName),
             ...scheduleMetaData.sheets.filter(sheet => sheet.sheetType == "custom").map(sheet => sheet.sheetName),
-            // "Element Name & Classification",
-            // ...Array.from(configurationCorePropertyMap.keys()),
-            // ...Array.from(configurationCustomPropertyMap.keys()),
             "[Reserved] Classification List",
             "[Reserved] Classification Group List"
         ];
@@ -517,5 +474,38 @@ export class SheetUtil {
         });
 
         return spreadSheetMetaData;
+    }
+
+    static getValueByPath(obj, path) {
+        const properties = path.split(/(?<!\.)\.(?![^"]*"(?:(?:[^"]*"){2})*[^"]*$)/).map(seg => seg.replace(/^"|"$/g, ''));
+
+        // Reduce the properties array to drill down into the object
+        return properties.reduce((current, property) => {
+            return current && Object.hasOwnProperty.call(current, property) ? current[property] : undefined;
+        }, obj);
+    }
+
+    static setValueByPath(obj, path, value) {
+        let current = obj;
+
+        const properties = path.split(/(?<!\.)\.(?![^"]*"(?:(?:[^"]*"){2})*[^"]*$)/).map(seg => seg.replace(/^"|"$/g, ''));
+
+        for (let i = 0; i < properties.length - 1; i++) {
+            const property = properties[i];
+
+            // If the property doesn't exist or isn't an object, create it or overwrite it
+            if (!current[property] || typeof current[property] !== 'object') {
+                current[property] = {};
+            }
+            current = current[property];
+        }
+
+        // Set the value at the last property
+        const lastProperty = properties[properties.length - 1];
+        current[lastProperty] = value;
+    }
+
+    static wait(n) {
+        return new Promise((resolve) => setTimeout(resolve, n));
     }
 }
