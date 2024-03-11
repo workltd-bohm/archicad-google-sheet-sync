@@ -4,7 +4,10 @@ import { JSONPath } from "jsonpath-plus";
 import { GoogleAuth } from "google-auth-library";
 import { google } from "googleapis";
 import { GoogleSheetService } from "./google_sheet_api.js";
-import { configurationCorePropertyMap, configurationCustomPropertyMap, classificationOptionMap, classificationGroupOptionMap } from "./config.js";
+import {
+    getConfigurationCorePropertyMap, getConfigurationCustomPropertyMap,
+    getConfigurationClassificationOptionMap, getConfigurationClassificationGroupOptionMap
+} from "./config.js";
 
 const logger = pino({ level: "info" });
 
@@ -72,21 +75,26 @@ export class SheetUtil {
             element.classification.full = (element.classification.code + ' ' + element.classification.name).trim();
             element.classificationGroup.full = (element.classificationGroup.code + ' ' + element.classificationGroup.name).trim();
 
+            let configurationCorePropertyMap = getConfigurationCorePropertyMap();
+            let configurationCustomPropertyMap = getConfigurationCustomPropertyMap();
+
             configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
-                let corePtyRow = corePropertySheets.get(corePtyGpName)?.values?.find(corePtyRow => corePtyRow[0] == row[0]);
-                element.coreProperties[corePtyGpName] = {};
+                // only proceed if there is such core property sheet from Google Sheets.
+                if (corePropertySheets.has(corePtyGpName)) {
+                    let corePtyRow = corePropertySheets.get(corePtyGpName)?.values?.find(corePtyRow => corePtyRow[0] == row[0]);
+                    element.coreProperties[corePtyGpName] = {};
 
-                if (corePtyRow == null) {
-                    corePtyRow = [row[0], row[1], row[2], ...Array(configurationCustomPropertyMap.get(corePtyGpName)?.length).fill(null)];
-                }
-
-                corePtyMap.forEach(corePtyName => {
-                    const corePtyVal = corePtyRow[corePropertySheets.get(corePtyGpName)?.headers?.indexOf(corePtyName)];
-                    if (corePtyVal?.trim()?.length > 0) {
-                        element.coreProperties[corePtyGpName][corePtyName] = corePtyVal?.trim();
+                    if (corePtyRow == null) {
+                        corePtyRow = [row[0], row[1], row[2], ...Array(configurationCustomPropertyMap.get(corePtyGpName)?.length).fill(null)];
                     }
 
-                });
+                    corePtyMap.forEach(corePtyName => {
+                        const corePtyVal = corePtyRow[corePropertySheets.get(corePtyGpName)?.headers?.indexOf(corePtyName)];
+                        if (corePtyVal?.trim()?.length > 0) {
+                            element.coreProperties[corePtyGpName][corePtyName] = corePtyVal?.trim();
+                        }
+                    });
+                }
             });
 
             if (element.classificationGroup.code != null && element.classificationGroup.name != null) {
@@ -120,8 +128,6 @@ export class SheetUtil {
 
         for (const field of sheetMetaData.fields) {
             const value = this.getValueByPath(element, field.path);
-            // const result = JSONPath({ path: field.path, json: element });
-            // const value = result?.length > 0 && result[0] != null ? result[0] : "";
             row.push(value);
         }
 
@@ -134,8 +140,6 @@ export class SheetUtil {
             `='Element Name & Classification'!B${generalSheetRowIndex + 2}`,
             `='Element Name & Classification'!C${generalSheetRowIndex + 2}`,
             ...sheetMetaData.fields.map(field => {
-                // const result = JSONPath({ path: field.path, json: element });
-                // const value = result?.length > 0 && result[0] != null ? result[0] : "";
                 const value = this.getValueByPath(element, field.path);
                 return value;
             })
@@ -148,8 +152,6 @@ export class SheetUtil {
         let row = [
             element.guid,
             ...sheetMetaData.fields.map(field => {
-                // const result = JSONPath({ path: field.path, json: element });
-                // const value = result?.length > 0 && result[0] != null ? result[0] : "";
                 const value = this.getValueByPath(element, field.path);
                 return value;
             })
@@ -277,6 +279,8 @@ export class SheetUtil {
                 corePropertySheet.values.push(corePropertySheetRowData);
             }
 
+            let configurationCustomPropertyMap = getConfigurationCustomPropertyMap();
+
             // Handle the custom property sheet.
             if (Object.keys(element.customProperties).length > 0) {
                 for (const customPtyGpName of Object.keys(element.customProperties)) {
@@ -389,8 +393,8 @@ export class SheetUtil {
         });
 
         formattingRequests.push(...GoogleSheetService.formatHeaderRequests(spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.sheetName)?.id));
-        formattingRequests.push(GoogleSheetService.dataValidationRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.sheetName)?.id, 1, 2, 3, `='[Reserved] Classification List'!A1:A${classificationOptionMap.size}`, "Select a classification."));
-        formattingRequests.push(GoogleSheetService.dataValidationRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.sheetName)?.id, 1, 3, 4, `='[Reserved] Classification Group List'!A1:A${classificationGroupOptionMap.size}`, "Select a classification group."));
+        formattingRequests.push(GoogleSheetService.dataValidationRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.sheetName)?.id, 1, 2, 3, `='[Reserved] Classification List'!A1:A${getConfigurationClassificationOptionMap().size}`, "Select a classification."));
+        formattingRequests.push(GoogleSheetService.dataValidationRequest(spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.sheetName)?.id, 1, 3, 4, `='[Reserved] Classification Group List'!A1:A${getConfigurationClassificationGroupOptionMap().size}`, "Select a classification group."));
 
         for (let i = 0; i < generalSheet.fields.length; i++) {
             if (!generalSheet.fields[i].editable) {
@@ -450,14 +454,12 @@ export class SheetUtil {
 
         changeSet.push({
             range: "'[Reserved] Classification List'!A1",
-            values: [...classificationOptionMap.entries()].map(([key, value]) => [`${key} ${value}`])
-
+            values: [...getConfigurationClassificationOptionMap().entries()].map(([key, value]) => [`${key} ${value}`])
         });
 
         changeSet.push({
             range: "'[Reserved] Classification Group List'!A1",
-            values: [...classificationGroupOptionMap.entries()].map(([key, value]) => [`${key} ${value}`])
-
+            values: [...getConfigurationClassificationGroupOptionMap().entries()].map(([key, value]) => [`${key} ${value}`])
         });
 
         const response = await sheetService.values.batchUpdate({

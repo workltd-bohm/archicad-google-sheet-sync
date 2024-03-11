@@ -1,31 +1,6 @@
-import { configurationCorePropertyMap, configurationCustomPropertyMap } from "./config.js";
+import { getConfigurationCorePropertyMap, getConfigurationCustomPropertyMap } from "./config.js";
 
 export class DatabaseModelUtil {
-    // composeProject = function (projectDto, scheduleDtos) {
-    //     let dbProject = {
-    //         name: projectDto.name,
-    //         code: projectDto.code,
-    //         companyCode: "WRK",
-    //         zones: [],
-    //         roles: [],
-    //         milestones: [],
-    //         schedules: []
-    //     };
-
-    //     if (scheduleDtos?.length > 0) {
-    //         scheduleDtos.forEach(scheduleDto => {
-    //             dbProject.schedules.push({
-    //                 name: scheduleDto.name,
-    //                 code: scheduleDto.code,
-    //                 start: scheduleDto.start,
-    //                 end: scheduleDto.end
-    //             });
-    //         });
-    //     }
-
-    //     return dbProject;
-    // };
-
     static composeElementModelFromDto(elementDto, projectCode) {
         let dbElement = {
             guid: elementDto.guid,
@@ -77,6 +52,9 @@ export class DatabaseModelUtil {
 
         dbElement.classification.full = this.composeClassificationFullName(dbElement.classification);
         dbElement.classificationGroup.full = this.composeClassificationFullName(dbElement.classificationGroup);
+
+        let configurationCorePropertyMap = getConfigurationCorePropertyMap();
+        let configurationCustomPropertyMap = getConfigurationCustomPropertyMap();
 
         configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
             dbElement.coreProperties[corePtyGpName] = {};
@@ -157,6 +135,9 @@ export class DatabaseModelUtil {
 
         elementDto.classification.full = this.composeClassificationFullName(dbElement.classification);
         elementDto.classificationGroup.full = this.composeClassificationFullName(dbElement.classificationGroup);
+
+        let configurationCorePropertyMap = getConfigurationCorePropertyMap();
+        let configurationCustomPropertyMap = getConfigurationCustomPropertyMap();
 
         configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
             elementDto.coreProperties[corePtyGpName] = {};

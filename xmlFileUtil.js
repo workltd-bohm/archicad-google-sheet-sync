@@ -2,7 +2,7 @@ import { homedir } from "os";
 import { existsSync, readFileSync } from "fs";
 import { DOMParser } from "@xmldom/xmldom";
 import { select, select1 } from 'xpath';
-import { configurationCorePropertyMap, configurationCustomPropertyMap } from "./config.js";
+import { getConfigurationCorePropertyMap, getConfigurationCustomPropertyMap } from "./config.js";
 
 export class XmlFileUtil {
     static composeProjectDtoFromFile(filePath) {
@@ -67,6 +67,9 @@ export class XmlFileUtil {
 
             element.classification.full = (element.classification.code + ' ' + element.classification.name).trim();
             element.classificationGroup.full = (element.classificationGroup.code + ' ' + element.classificationGroup.name).trim();
+
+            let configurationCorePropertyMap = getConfigurationCorePropertyMap();
+            let configurationCustomPropertyMap = getConfigurationCustomPropertyMap();
 
             configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
                 element.coreProperties[corePtyGpName] = {};

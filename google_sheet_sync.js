@@ -1,8 +1,6 @@
 import { homedir } from "os";
 import dayjs from 'dayjs';
-import { JSONPath } from 'jsonpath-plus';
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { DOMParser } from "@xmldom/xmldom";
 import pino from "pino";
 import { create } from 'xmlbuilder2';
 import { google } from "googleapis";
@@ -11,7 +9,7 @@ import { DatabaseModelUtil } from "./databaseModelUtil.js";
 import { XmlFileUtil } from "./xmlFileUtil.js";
 import { SheetUtil } from "./sheetUtil.js";
 import { GoogleSheetService } from "./google_sheet_api.js";
-import { databaseConnectionUrl } from "./config.js";
+import { initializeConfigurations, getDatabaseConnectionUrl, getDatabaseName } from "./config.js";
 import { DatabaseService } from "./databaseService.js";
 
 const logger = pino({ level: "info" });
@@ -68,10 +66,13 @@ async function main(args) {
     logger.info(`projectName = ${projectName}`);
     logger.info(`dataFileName = ${dataFileName}`);
 
+    // Initialize the configuration.
+    initializeConfigurations(projectName);
+
     const dataFilePath = `${homedir()}/bohm/files/${dataFileName}`;
 
     // Initialize the MongoDB connection.
-    const dbService = new DatabaseService(databaseConnectionUrl, "bohm");
+    const dbService = new DatabaseService(getDatabaseConnectionUrl(), getDatabaseName());
 
     // Initialize the Google Drive API and Google Sheets API connection.
     const auth = new GoogleAuth({
@@ -140,6 +141,7 @@ async function main(args) {
                 const elementDtoFromFile = projectDtoFromFile.elements.find(element => element.guid === dbElement.guid);
 
                 dbElement.name = elementDtoFromFile.name;
+                dbElement.modiStamp = elementDtoFromFile.modiStamp;
                 dbElement.classification = elementDtoFromFile.classification;
                 dbElement.classificationGroup = elementDtoFromFile.classificationGroup;
                 dbElement.coreProperties = elementDtoFromFile.coreProperties;
@@ -291,8 +293,6 @@ async function main(args) {
                         // Create a snapshot of the current element record in database.
                         let dbElementSnapshot = DatabaseModelUtil.composeElementSnapshotFromModel(dbElement, "Schedule", `Updated from ${dbSchedule.name}`);
                         await dbService.insertOne("elementSnapshots", dbElementSnapshot);
-
-
 
                         // Update the element record in the database.
                         for (const field of changeSet) {
