@@ -196,68 +196,35 @@ export class SheetUtil {
 
         logger.info(`Start to delete all data from the spreadsheet [${spreadSheetMetaData.name}].`);
 
-        const responseGeneralSheetCleanup = await sheetService.batchUpdate({
-            spreadsheetId: spreadSheetMetaData.id,
-            resource: {
-                requests: [
-                    {
-                        deleteDimension: {
-                            range: {
-                                sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === generalSheet.name)?.id,
-                                dimension: "ROWS",
-                                startIndex: 1,
-                                endIndex: generalSheet.values.length + 2
-                            }
-                        }
-                    }
-                ]
-            }
-        });
-
-        generalSheet.values = [];
-
-        for (const corePropertySheetName of corePropertySheets.keys()) {
-            const responseCoreSheetCleanup = await sheetService.batchUpdate({
+        if (generalSheet.values.length > 0) {
+            const responseGeneralSheetCleanup = await sheetService.values.clear({
                 spreadsheetId: spreadSheetMetaData.id,
-                resource: {
-                    requests: [
-                        {
-                            deleteDimension: {
-                                range: {
-                                    sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === corePropertySheetName)?.id,
-                                    dimension: "ROWS",
-                                    startIndex: 1,
-                                    endIndex: corePropertySheets.get(corePropertySheetName).values.length + 2
-                                }
-                            }
-                        }
-                    ]
-                }
+                range: `'${generalSheet.name}'!A2:Z${generalSheet.values.length + 1}`
             });
 
-            corePropertySheets.get(corePropertySheetName).values = [];
+            generalSheet.values = [];
+        }
+
+        for (const corePropertySheetName of corePropertySheets.keys()) {
+            if (corePropertySheets.get(corePropertySheetName).values.length > 0) {
+                const responseCoreSheetCleanup = await sheetService.values.clear({
+                    spreadsheetId: spreadSheetMetaData.id,
+                    range: `'${corePropertySheetName}'!A2:Z${corePropertySheets.get(corePropertySheetName).values.length + 1}`
+                });
+
+                corePropertySheets.get(corePropertySheetName).values = [];
+            }
         }
 
         for (const customPropertySheetName of customPropertySheets.keys()) {
-            const responseCustomSheetCleanup = await sheetService.batchUpdate({
-                spreadsheetId: spreadSheetMetaData.id,
-                resource: {
-                    requests: [
-                        {
-                            deleteDimension: {
-                                range: {
-                                    sheetId: spreadSheetMetaData.sheets.find(sheet => sheet.name === customPropertySheetName)?.id,
-                                    dimension: "ROWS",
-                                    startIndex: 1,
-                                    endIndex: customPropertySheets.get(customPropertySheetName).values.length + 2
-                                }
-                            }
-                        }
-                    ]
-                }
-            });
+            if (customPropertySheets.get(customPropertySheetName).values.length > 0) {
+                const responseCustomSheetCleanup = await sheetService.values.clear({
+                    spreadsheetId: spreadSheetMetaData.id,
+                    range: `'${customPropertySheetName}'!A2:Z${customPropertySheets.get(customPropertySheetName).values.length + 1}`
+                });
 
-            customPropertySheets.get(customPropertySheetName).values = [];
+                customPropertySheets.get(customPropertySheetName).values = [];
+            }
         }
 
         logger.info(`Completed to delete all data from the spreadsheet [${spreadSheetMetaData.name}].`);
@@ -311,9 +278,9 @@ export class SheetUtil {
                 "https://www.googleapis.com/auth/drive"],
         });
 
-
-
         const testService = google.sheets({ version: "v4", auth }).spreadsheets;
+
+        logger.info(`Start to populate the data into the sheet [${generalSheet.name}] of spreadsheet [${spreadSheetMetaData.name}].`);
 
         const responsePopulateGeneralSheet = await testService.values.batchUpdate({
             spreadsheetId: spreadSheetMetaData.id,
@@ -326,9 +293,11 @@ export class SheetUtil {
             }
         });
 
-        await this.wait(5000);
+        logger.info(`Completed to populate the data into the sheet [${generalSheet.name}] of spreadsheet [${spreadSheetMetaData.name}].`);
 
         for (const corePropertySheetName of corePropertySheets.keys()) {
+            logger.info(`Start to populate the data into the sheet [${corePropertySheetName}] of spreadsheet [${spreadSheetMetaData.name}].`);
+
             const responsePopulateCoreSheet = await sheetService.values.batchUpdate({
                 spreadsheetId: spreadSheetMetaData.id,
                 resource: {
@@ -340,10 +309,12 @@ export class SheetUtil {
                 }
             });
 
-            await this.wait(5000);
+            logger.info(`Completed to populate the data into the sheet [${corePropertySheetName}] of spreadsheet [${spreadSheetMetaData.name}].`);
         }
 
         for (const customPropertySheetName of customPropertySheets.keys()) {
+            logger.info(`Start to populate the data into the sheet [${customPropertySheetName}] of spreadsheet [${spreadSheetMetaData.name}].`);
+
             const responsePopulateCustomSheet = await sheetService.values.batchUpdate({
                 spreadsheetId: spreadSheetMetaData.id,
                 resource: {
@@ -355,7 +326,7 @@ export class SheetUtil {
                 }
             });
 
-            await this.wait(5000);
+            logger.info(`Completed to populate the data into the sheet [${customPropertySheetName}] of spreadsheet [${spreadSheetMetaData.name}].`);
         }
 
         logger.info(`Completed to populate the data into the spreadsheet [${spreadSheetMetaData.name}].`);

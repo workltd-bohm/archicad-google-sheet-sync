@@ -50,13 +50,15 @@ const handleConsoleArguments = function (args) {
         process.exit(1);
     }
 
-    if (dataFileName == null) {
+    if (direction != "googleSheetSync" && dataFileName == null) {
         console.error('Data file name is required.');
         process.exit(1);
     }
 
     return [direction, projectName, dataFileName];
 }
+
+async function performDatabaseSynchronization(dbService, dbProject, projectDtoFromFile) { }
 
 async function main(args) {
     // Retrieve the file name from the command line arguments.
@@ -66,13 +68,21 @@ async function main(args) {
     logger.info(`projectName = ${projectName}`);
     logger.info(`dataFileName = ${dataFileName}`);
 
+    const dataFilePath = `${homedir()}/bohm/files/${dataFileName}`;
+
     // Initialize the configuration.
     initializeConfigurations(projectName);
 
-    const dataFilePath = `${homedir()}/bohm/files/${dataFileName}`;
-
     // Initialize the MongoDB connection.
     const dbService = new DatabaseService(getDatabaseConnectionUrl(), getDatabaseName());
+
+    // Connect to the database.
+    await dbService.connect().catch(err => {
+        console.error(err);
+        process.exit(1);
+    });
+
+    logger.info(`Initialized the database connection.`);
 
     // Initialize the Google Drive API and Google Sheets API connection.
     const auth = new GoogleAuth({
@@ -87,14 +97,6 @@ async function main(args) {
     logger.info(`Initialized the Google Drive API and Google Sheets API connection, using crendential in ${process.env["GOOGLE_APPLICATION_CREDENTIALS"]}.`);
     // Initialize the Google Drive API and Google Sheets API connection.
 
-    // Connect to the database.
-    await dbService.connect().catch(err => {
-        console.error(err);
-        process.exit(1);
-    });
-
-    logger.info(`Initialized the database connection.`);
-
     try {
         // assume project and schedule in place at the moment.
         let dbProject = await dbService.findOne("projects", { name: projectName });
@@ -104,7 +106,48 @@ async function main(args) {
             process.exit(1);
         }
 
-        if (direction === "push") {
+        if (direction === "googleSheetSync") {
+            logger.info(`Started to retrieve all elements with up-to-date data from the database.`);
+
+            const dbElementsForExport = await dbService.findMany("elements", { projectCode: dbProject.code })
+            const xmlProjectDto = DatabaseModelUtil.composeProjectDtoFromModel(dbProject, dbElementsForExport, dbDeletedElements.map(dbElement => { return dbElement.guid; }));
+
+            logger.info(`Completed to retrieve all elements with up-to-date data from the database.`);
+
+            let dbSchedules = dbProject.schedules;
+
+            logger.info(`Schedules to be synchronized in Google Sheets: ${dbSchedules.length}`);
+
+            for (const dbSchedule of dbSchedules) {
+                logger.info(`Started to synchronize schedule [${dbSchedule.name}].`);
+
+                const spreadSheetMetaData = dbSchedule.externalId?.length > 0 ?
+                    await GoogleSheetService.getSpreadSheetProperty(sheetService, dbSchedule.externalId, true, true) :
+                    await SheetUtil.createSpreadsheet(driveService, sheetService, dbSchedule, dbProject.name);
+
+                if (spreadSheetMetaData == null) {
+                    console.error("Spreadsheet cannot be created or retrieved in Google Drive.");
+                    continue;
+                }
+
+                if (dbSchedule.externalId == null) {
+                    dbSchedule.externalName = spreadSheetMetaData.name;
+                    dbSchedule.externalId = spreadSheetMetaData.id;
+                    dbSchedule.externalUrl = spreadSheetMetaData.url;
+                }
+
+                logger.info(`Schedule spreadsheet details: ${spreadSheetMetaData.name} / ${dbSchedule.externalId} / ${dbSchedule.externalUrl}`);
+
+                await SheetUtil.syncAllSheetData(sheetService, spreadSheetMetaData, dbSchedule, xmlProjectDto);
+            }
+
+            // Update the project record in the database, in case of changes in schedules sub-collection.
+            await dbService.updateOne("projects", { name: projectName }, dbProject);
+            //
+            // End Google Sheet synchronization.
+            //
+            logger.info(`Completed the Google Sheets synchronization process.`);
+        } else if (direction === "push") {
             if (!existsSync(dataFilePath)) {
                 console.error("Data file not found");
                 process.exit(1);
@@ -121,9 +164,9 @@ async function main(args) {
             //
             // Start database synchronization.
             //
-            let dbElements = await dbService.findMany("elements", { guid: { $in: projectDtoFromFile.elements.map(element => { return element.guid; }) } });
+            let dbElements = await dbService.findMany("elements", { guid: { $in: projectDtoFromFile.elements.map(element => { return element.guid; }) }, projectCode: dbProject.code });
             let newElementDtosFromFile = projectDtoFromFile.elements.filter(element => !dbElements.some(dbElement => dbElement.guid === element.guid));
-            let dbDeletedElements = await dbService.findMany("elements", { guid: { $in: projectDtoFromFile.deletedElements } });
+            let dbDeletedElements = await dbService.findMany("elements", { guid: { $in: projectDtoFromFile.deletedElements }, projectCode: dbProject.code });
 
             logger.info(`Elements to be updated in the database: ${dbElements.length}`);
             logger.info(`New elements to be imported into database: ${newElementDtosFromFile.length}`);
@@ -147,7 +190,7 @@ async function main(args) {
                 dbElement.coreProperties = elementDtoFromFile.coreProperties;
                 dbElement.customProperties = elementDtoFromFile.customProperties;
 
-                await dbService.replaceOne("elements", { guid: elementDtoFromFile.guid }, dbElement);
+                await dbService.replaceOne("elements", { guid: elementDtoFromFile.guid, projectCode: dbProject.code }, dbElement);
 
                 logger.info(`Element [${dbElement.guid}] has been updated in the database.`);
             }
