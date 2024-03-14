@@ -1,0 +1,43 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch Program",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/google_sheet_sync.js",
+            "args": [
+                "--direction",
+                "push",
+                "--project",
+                "Token Bungalow",
+                "--dataFile",
+                "add-on-export-data-delta-20240314-112706.xml"
+                // "--direction",
+                // "push",
+                // "--project",
+                // "Test7",
+                // "--dataFile",
+                // "add-on-export-data-20240304-103713.xml"
+                // "--direction",
+                // "pull",
+                // "--project",
+                // "Test7",
+                // "--dataFile",
+                // "add-on-import-data-xxxxx.xml"
+                // "--direction",
+                // "pull",
+                // "--project",
+                // "Token Bungalow",
+                // "--dataFile",
+                // "add-on-export-data-xxxxxxxx-xxxxxx.xml"
+            ]
+        }
+    ]
+}
