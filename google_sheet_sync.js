@@ -106,48 +106,7 @@ async function main(args) {
             process.exit(1);
         }
 
-        if (direction === "googleSheetSync") {
-            logger.info(`Started to retrieve all elements with up-to-date data from the database.`);
-
-            const dbElementsForExport = await dbService.findMany("elements", { projectCode: dbProject.code })
-            const xmlProjectDto = DatabaseModelUtil.composeProjectDtoFromModel(dbProject, dbElementsForExport, dbDeletedElements.map(dbElement => { return dbElement.guid; }));
-
-            logger.info(`Completed to retrieve all elements with up-to-date data from the database.`);
-
-            let dbSchedules = dbProject.schedules;
-
-            logger.info(`Schedules to be synchronized in Google Sheets: ${dbSchedules.length}`);
-
-            for (const dbSchedule of dbSchedules) {
-                logger.info(`Started to synchronize schedule [${dbSchedule.name}].`);
-
-                const spreadSheetMetaData = dbSchedule.externalId?.length > 0 ?
-                    await GoogleSheetService.getSpreadSheetProperty(sheetService, dbSchedule.externalId, true, true) :
-                    await SheetUtil.createSpreadsheet(driveService, sheetService, dbSchedule, dbProject.name);
-
-                if (spreadSheetMetaData == null) {
-                    console.error("Spreadsheet cannot be created or retrieved in Google Drive.");
-                    continue;
-                }
-
-                if (dbSchedule.externalId == null) {
-                    dbSchedule.externalName = spreadSheetMetaData.name;
-                    dbSchedule.externalId = spreadSheetMetaData.id;
-                    dbSchedule.externalUrl = spreadSheetMetaData.url;
-                }
-
-                logger.info(`Schedule spreadsheet details: ${spreadSheetMetaData.name} / ${dbSchedule.externalId} / ${dbSchedule.externalUrl}`);
-
-                await SheetUtil.syncAllSheetData(sheetService, spreadSheetMetaData, dbSchedule, xmlProjectDto);
-            }
-
-            // Update the project record in the database, in case of changes in schedules sub-collection.
-            await dbService.updateOne("projects", { name: projectName }, dbProject);
-            //
-            // End Google Sheet synchronization.
-            //
-            logger.info(`Completed the Google Sheets synchronization process.`);
-        } else if (direction === "push") {
+        if (direction === "push") {
             if (!existsSync(dataFilePath)) {
                 console.error("Data file not found");
                 process.exit(1);
@@ -176,10 +135,10 @@ async function main(args) {
 
             // Handle element updates and persist into DB.
             for (let dbElement of dbElements) {
-                const dbElementSnapshot = DatabaseModelUtil.composeElementSnapshotFromModel(dbElement, "ArchiCAD", "Element updated.");
-                await dbService.insertOne("elementSnapshots", dbElementSnapshot);
+                // const dbElementSnapshot = DatabaseModelUtil.composeElementSnapshotFromModel(dbElement, "ArchiCAD", "Element updated.");
+                // await dbService.insertOne("elementSnapshots", dbElementSnapshot);
 
-                logger.info(`Snapshot has been taken for the current element [${dbElement.guid}] in the database.`);
+                // logger.info(`Snapshot has been taken for the current element [${dbElement.guid}] in the database.`);
 
                 const elementDtoFromFile = projectDtoFromFile.elements.find(element => element.guid === dbElement.guid);
 
@@ -209,12 +168,12 @@ async function main(args) {
 
             // Handle deleted elements from ArchiCAD.
             if (dbDeletedElements.length > 0) {
-                for (let dbDeletedElement of dbDeletedElements) {
-                    const dbElementSnapshot = DatabaseModelUtil.composeElementSnapshotFromModel(dbDeletedElement, "ArchiCAD", "Element deleted.");
-                    await dbService.insertOne("elementSnapshots", dbElementSnapshot);
+                // for (let dbDeletedElement of dbDeletedElements) {
+                //     const dbElementSnapshot = DatabaseModelUtil.composeElementSnapshotFromModel(dbDeletedElement, "ArchiCAD", "Element deleted.");
+                //     await dbService.insertOne("elementSnapshots", dbElementSnapshot);
 
-                    logger.info(`A snapshot has been taken for the deleted element [${dbDeletedElement.guid}].`);
-                }
+                //     logger.info(`A snapshot has been taken for the deleted element [${dbDeletedElement.guid}].`);
+                // }
 
                 await dbService.deleteMany("elements", { guid: { $in: dbDeletedElements.map(dbElement => { return dbElement.guid; }) } });
 
@@ -227,133 +186,7 @@ async function main(args) {
             //
 
             logger.info(`Completed the database synchronization process.`);
-
-            //
-            // Start Google Sheet synchronization.
-            //
-            logger.info(`Started the Google Sheets synchronization process.`);
-
-            logger.info(`Started to retrieve all elements with up-to-date data from the database.`);
-
-            const dbElementsForExport = await dbService.findMany("elements", { projectCode: dbProject.code })
-            const xmlProjectDto = DatabaseModelUtil.composeProjectDtoFromModel(dbProject, dbElementsForExport, dbDeletedElements.map(dbElement => { return dbElement.guid; }));
-
-            logger.info(`Completed to retrieve all elements with up-to-date data from the database.`);
-
-            let dbSchedules = dbProject.schedules;
-
-            logger.info(`Schedules to be synchronized in Google Sheets: ${dbSchedules.length}`);
-
-            for (const dbSchedule of dbSchedules) {
-                logger.info(`Started to synchronize schedule [${dbSchedule.name}].`);
-
-                const spreadSheetMetaData = dbSchedule.externalId?.length > 0 ?
-                    await GoogleSheetService.getSpreadSheetProperty(sheetService, dbSchedule.externalId, true, true) :
-                    await SheetUtil.createSpreadsheet(driveService, sheetService, dbSchedule, dbProject.name);
-
-                if (spreadSheetMetaData == null) {
-                    console.error("Spreadsheet cannot be created or retrieved in Google Drive.");
-                    continue;
-                }
-
-                if (dbSchedule.externalId == null) {
-                    dbSchedule.externalName = spreadSheetMetaData.name;
-                    dbSchedule.externalId = spreadSheetMetaData.id;
-                    dbSchedule.externalUrl = spreadSheetMetaData.url;
-                }
-
-                logger.info(`Schedule spreadsheet details: ${spreadSheetMetaData.name} / ${dbSchedule.externalId} / ${dbSchedule.externalUrl}`);
-
-                await SheetUtil.syncAllSheetData(sheetService, spreadSheetMetaData, dbSchedule, xmlProjectDto);
-            }
-
-            // Update the project record in the database, in case of changes in schedules sub-collection.
-            await dbService.updateOne("projects", { name: projectName }, dbProject);
-            //
-            // End Google Sheet synchronization.
-            //
-            logger.info(`Completed the Google Sheets synchronization process.`);
         } else if (direction === "pull") {
-            logger.info(`Started the database synchronization process.`);
-            //
-            // Start database synchronization.
-            //
-            let dbActiveSchedules = dbProject.schedules.filter(schedule => schedule.externalId?.length > 0);
-
-            logger.info(`Active schedules to be synchronized in the database: ${dbActiveSchedules.length}`);
-
-            for (const dbSchedule of dbActiveSchedules) {
-                const spreadSheetMetaData = await GoogleSheetService.getSpreadSheetProperty(sheetService, dbSchedule.externalId, true, true);
-
-                logger.info(`Started to synchronize schedule [${dbSchedule.name}].`);
-
-                if (spreadSheetMetaData == null) {
-                    logger.error("Spreadsheet not found in Google Drive.");
-                    continue;
-                }
-
-                logger.info(`Started to extract element information from schedule [${dbSchedule.name}].`);
-
-                const sheetProjectDto = await SheetUtil.composeProjectDtoFromSheets(sheetService, spreadSheetMetaData, dbSchedule);
-
-                logger.info(`Completed to extract element information from schedule [${dbSchedule.name}].`);
-
-                for (const sheetElementDto of sheetProjectDto.elements) {
-                    // Current workaround as Google Sheet does not have the project code.
-                    sheetElementDto.projectCode = dbProject.code;
-
-                    logger.info(`Comparing element [${sheetElementDto.guid}] in schedule [${dbSchedule.name}] and database.`);
-
-                    const dbElement = await dbService.findOne("elements", { guid: sheetElementDto.guid });
-
-                    if (dbElement == null) {
-                        console.error(`Element [${sheetElementDto.guid}] cannot be found in the database.`);
-                        continue;
-                    }
-
-                    // Detect changes in all the fields editable in all sheets.
-                    let changeSet = [];
-
-                    for (const dbSheet of dbSchedule.sheets.filter(
-                        sheet => sheet.sheetType == "core" ||
-                            sheet.sheetType == "general" ||
-                            (sheet.sheetType == "custom" && sheet.sheetName == sheetElementDto.classificationGroup.full))) {
-                        for (const field of dbSheet.fields.filter(field => field.editable)) {
-                            const sheetValue = SheetUtil.getValueByPath(sheetElementDto, field.path);
-                            const dbValue = SheetUtil.getValueByPath(dbElement, field.path);
-
-                            if (sheetValue != dbValue) {
-                                changeSet.push({ path: field.path, newValue: sheetValue });
-                            }
-                        }
-                    }
-                    // Detect changes in all the fields editable in all sheets.
-
-                    // Apply changes to the database.
-                    if (changeSet.length > 0) {
-                        logger.info(`Element [${sheetElementDto.guid}]: ${changeSet.length} field(s) changed.`);
-
-                        // Create a snapshot of the current element record in database.
-                        let dbElementSnapshot = DatabaseModelUtil.composeElementSnapshotFromModel(dbElement, "Schedule", `Updated from ${dbSchedule.name}`);
-                        await dbService.insertOne("elementSnapshots", dbElementSnapshot);
-
-                        // Update the element record in the database.
-                        for (const field of changeSet) {
-                            SheetUtil.setValueByPath(dbElement, field.path, field.newValue);
-                        }
-
-                        await dbService.replaceOne("elements", { guid: sheetElementDto.guid }, dbElement);
-                        // Update the dbElement in the database.
-                    }
-                    // Apply changes to the database.
-                }
-                //
-                // End database synchronization.
-                //
-
-                logger.info(`Completed the database synchronization process.`);
-            }
-
             logger.info(`Started the ArchiCAD synchronization process.`);
 
             //

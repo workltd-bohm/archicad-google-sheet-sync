@@ -13,12 +13,12 @@
             ],
             "program": "${workspaceFolder}/google_sheet_sync.js",
             "args": [
-                "--direction",
-                "push",
-                "--project",
-                "Token Bungalow",
-                "--dataFile",
-                "add-on-export-data-delta-20240314-112706.xml"
+                // "--direction",
+                // "push",
+                // "--project",
+                // "Token Bungalow",
+                // "--dataFile",
+                // "add-on-export-data-delta-20240314-112706.xml"
                 // "--direction",
                 // "push",
                 // "--project",
@@ -31,12 +31,12 @@
                 // "Test7",
                 // "--dataFile",
                 // "add-on-import-data-xxxxx.xml"
-                // "--direction",
-                // "pull",
-                // "--project",
-                // "Token Bungalow",
-                // "--dataFile",
-                // "add-on-export-data-xxxxxxxx-xxxxxx.xml"
+                "--direction",
+                "pull",
+                "--project",
+                "Token Bungalow",
+                "--dataFile",
+                "add-on-import-data-xxxxxxxx-xxxxxx.xml"
             ]
         }
     ]
