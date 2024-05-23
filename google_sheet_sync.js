@@ -3,12 +3,8 @@ import dayjs from 'dayjs';
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import pino from "pino";
 import { create } from 'xmlbuilder2';
-import { google } from "googleapis";
-import { GoogleAuth } from "google-auth-library";
 import { DatabaseModelUtil } from "./databaseModelUtil.js";
 import { XmlFileUtil } from "./xmlFileUtil.js";
-import { SheetUtil } from "./sheetUtil.js";
-import { GoogleSheetService } from "./google_sheet_api.js";
 import { initializeConfigurations, getDatabaseConnectionUrl, getDatabaseName } from "./config.js";
 import { DatabaseService } from "./databaseService.js";
 
@@ -58,8 +54,6 @@ const handleConsoleArguments = function (args) {
     return [direction, projectName, dataFileName];
 }
 
-async function performDatabaseSynchronization(dbService, dbProject, projectDtoFromFile) { }
-
 async function main(args) {
     // Retrieve the file name from the command line arguments.
     const [direction, projectName, dataFileName] = handleConsoleArguments(args);
@@ -84,22 +78,16 @@ async function main(args) {
 
     logger.info(`Initialized the database connection.`);
 
-    // Initialize the Google Drive API and Google Sheets API connection.
-    const auth = new GoogleAuth({
-        scopes: [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"],
-    });
-
-    const sheetService = google.sheets({ version: "v4", auth }).spreadsheets;
-    const driveService = google.drive({ version: "v3", auth });
-
-    logger.info(`Initialized the Google Drive API and Google Sheets API connection, using crendential in ${process.env["GOOGLE_APPLICATION_CREDENTIALS"]}.`);
-    // Initialize the Google Drive API and Google Sheets API connection.
-
     try {
         // assume project and schedule in place at the moment.
-        let dbProject = await dbService.findOne("projects", { name: projectName });
+        const dbProject = await dbService.findOne("projects", { name: projectName });
+        const dbClassifications = (await dbService.findAll("classifications")).map(dbClassification => { return { code: dbClassification.code, name: dbClassification.name, full: dbClassification.full }; });
+        const dbClassificationTemplates = (await dbService.findAll("classificationTemplates")).map(dbClassificationTemplate => {
+            return {
+                code: dbClassificationTemplate.code, template: dbClassificationTemplate
+                    .template
+            };
+        });
 
         if (!dbProject) {
             console.error(`Project with name [${projectName}] not found in the database.`);
@@ -123,6 +111,7 @@ async function main(args) {
             //
             // Start database synchronization.
             //
+
             let dbElements = await dbService.findMany("elements", { guid: { $in: projectDtoFromFile.elements.map(element => { return element.guid; }) }, projectCode: dbProject.code });
             let newElementDtosFromFile = projectDtoFromFile.elements.filter(element => !dbElements.some(dbElement => dbElement.guid === element.guid));
             let dbDeletedElements = await dbService.findMany("elements", { guid: { $in: projectDtoFromFile.deletedElements }, projectCode: dbProject.code });
@@ -142,16 +131,14 @@ async function main(args) {
 
                 const elementDtoFromFile = projectDtoFromFile.elements.find(element => element.guid === dbElement.guid);
 
+                if (dbElement.name != elementDtoFromFile.name) {
+                    dbElement.name = elementDtoFromFile.name;
+                    await dbService.replaceOne("elements", { guid: elementDtoFromFile.guid, projectCode: dbProject.code }, dbElement);
+                    logger.info(`Element [${dbElement.guid}] has been updated in the database.`);
+                }
+
+                // Only update the name.
                 dbElement.name = elementDtoFromFile.name;
-                dbElement.modiStamp = elementDtoFromFile.modiStamp;
-                dbElement.classification = elementDtoFromFile.classification;
-                dbElement.classificationGroup = elementDtoFromFile.classificationGroup;
-                dbElement.coreProperties = elementDtoFromFile.coreProperties;
-                dbElement.customProperties = elementDtoFromFile.customProperties;
-
-                await dbService.replaceOne("elements", { guid: elementDtoFromFile.guid, projectCode: dbProject.code }, dbElement);
-
-                logger.info(`Element [${dbElement.guid}] has been updated in the database.`);
             }
             // Handle element updates and persist into DB.
 
@@ -159,7 +146,7 @@ async function main(args) {
 
             // Handle new elements from ArchiCAD.
             if (newElementDtosFromFile.length > 0) {
-                const dbNewElements = newElementDtosFromFile.map(newElementDto => DatabaseModelUtil.composeElementModelFromDto(newElementDto, dbProject.code));
+                const dbNewElements = newElementDtosFromFile.map(newElementDto => DatabaseModelUtil.composeElementModelFromDto(dbClassifications, newElementDto, dbProject.code));
                 await dbService.insertMany("elements", dbNewElements);
 
                 logger.info(`New elements have been saved into the database.`);
@@ -168,13 +155,6 @@ async function main(args) {
 
             // Handle deleted elements from ArchiCAD.
             if (dbDeletedElements.length > 0) {
-                // for (let dbDeletedElement of dbDeletedElements) {
-                //     const dbElementSnapshot = DatabaseModelUtil.composeElementSnapshotFromModel(dbDeletedElement, "ArchiCAD", "Element deleted.");
-                //     await dbService.insertOne("elementSnapshots", dbElementSnapshot);
-
-                //     logger.info(`A snapshot has been taken for the deleted element [${dbDeletedElement.guid}].`);
-                // }
-
                 await dbService.deleteMany("elements", { guid: { $in: dbDeletedElements.map(dbElement => { return dbElement.guid; }) } });
 
                 logger.info(`Invalid elements have been deleted from the database.`);
@@ -193,7 +173,7 @@ async function main(args) {
             // Start ArchiCAD synchronization.
             //
             const dbElementsForExport = await dbService.findMany("elements", { projectCode: dbProject.code });
-            const xmlProjectDto = DatabaseModelUtil.composeProjectDtoFromModel(dbProject, dbElementsForExport);
+            const xmlProjectDto = DatabaseModelUtil.composeProjectDtoFromDatabase(dbProject, dbElementsForExport);
             const projectXmlDoc = XmlFileUtil.composeXmlObjectFromDto(xmlProjectDto);
 
             try {

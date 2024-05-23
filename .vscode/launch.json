@@ -7,30 +7,29 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Launch Program",
+            "name": "Launch Push",
             "skipFiles": [
                 "<node_internals>/**"
             ],
             "program": "${workspaceFolder}/google_sheet_sync.js",
             "args": [
-                // "--direction",
-                // "push",
-                // "--project",
-                // "Token Bungalow",
-                // "--dataFile",
-                // "add-on-export-data-delta-20240314-112706.xml"
-                // "--direction",
-                // "push",
-                // "--project",
-                // "Test7",
-                // "--dataFile",
-                // "add-on-export-data-20240304-103713.xml"
-                // "--direction",
-                // "pull",
-                // "--project",
-                // "Test7",
-                // "--dataFile",
-                // "add-on-import-data-xxxxx.xml"
+                "--direction",
+                "push",
+                "--project",
+                "Token Bungalow",
+                "--dataFile",
+                "add-on-export-data-delta-20240522-192030.xml"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch Pull",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}/google_sheet_sync.js",
+            "args": [
                 "--direction",
                 "pull",
                 "--project",

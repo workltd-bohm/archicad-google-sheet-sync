@@ -1,7 +1,23 @@
 import { getConfigurationCorePropertyMap, getConfigurationCustomPropertyMap } from "./config.js";
 
 export class DatabaseModelUtil {
-    static composeElementModelFromDto(elementDto, projectCode) {
+    static resolveClassification(dbClassifications, classification, classificationElementTypeGroup) {
+        const dbClassification = dbClassifications.find(dbClassification => dbClassification.code === classification.code + "__01");
+        const dbClassificationElementTypeGroup = dbClassifications.find(dbClassification => dbClassification.code === classificationElementTypeGroup.code);
+        const consistentHierarchy = classification.code != classificationElementTypeGroup.code && classificationElementTypeGroup.code.includes(classification.code);
+
+        if (dbClassificationElementTypeGroup != null && consistentHierarchy) {
+            return dbClassificationElementTypeGroup;
+        }
+
+        if (dbClassification != null) {
+            return dbClassification;
+        }
+
+        return dbClassifications.find(dbClassification => dbClassification.code === "Ss__01")
+    }
+
+    static composeElementModelFromDto(dbClassifications, elementDto, projectCode) {
         let dbElement = {
             guid: elementDto.guid,
             projectCode: projectCode,
@@ -26,16 +42,7 @@ export class DatabaseModelUtil {
             finish: elementDto.finish,
             mount: elementDto.mount,
             modiStamp: elementDto.modiStamp,
-            classification: {
-                code: elementDto.classification.code,
-                name: elementDto.classification.name,
-                full: elementDto.classification.full
-            },
-            classificationGroup: {
-                code: elementDto.classificationGroup.code,
-                name: elementDto.classificationGroup.name,
-                full: elementDto.classificationGroup.full
-            },
+            classification: this.resolveClassification(dbClassifications, elementDto.classification, elementDto.classificationElementTypeGroup),
             libraryPart: {
                 index: elementDto.libraryPart.index,
                 documentName: elementDto.libraryPart.documentName,
@@ -46,33 +53,9 @@ export class DatabaseModelUtil {
                 contractAddress: null,
                 id: null
             },
-            coreProperties: {},
-            customProperties: {}
+            coreProperties: elementDto.coreProperties,
+            customProperties: elementDto.customProperties
         };
-
-        dbElement.classification.full = this.composeClassificationFullName(dbElement.classification);
-        dbElement.classificationGroup.full = this.composeClassificationFullName(dbElement.classificationGroup);
-
-        let configurationCorePropertyMap = getConfigurationCorePropertyMap();
-        let configurationCustomPropertyMap = getConfigurationCustomPropertyMap();
-
-        configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
-            dbElement.coreProperties[corePtyGpName] = {};
-            corePtyMap.forEach(corePtyName => {
-                dbElement.coreProperties[corePtyGpName][corePtyName] = elementDto.coreProperties[corePtyGpName][corePtyName];
-            });
-        });
-
-        if (dbElement.classificationGroup?.full?.length > 0) {
-            const customPropertyGroupName = dbElement.classificationGroup.full;
-            dbElement.customProperties[customPropertyGroupName] = {};
-
-            if (configurationCustomPropertyMap.has(customPropertyGroupName)) {
-                configurationCustomPropertyMap.get(customPropertyGroupName).forEach(customPtyName => {
-                    dbElement.customProperties[customPropertyGroupName][customPtyName] = elementDto.customProperties[customPropertyGroupName][customPtyName];
-                });
-            }
-        }
 
         return dbElement;
     }
@@ -87,7 +70,12 @@ export class DatabaseModelUtil {
         return dbSnapshot;
     }
 
-    static composeProjectDtoFromModel(dbProject, dbElements, dbDeletedElementGuids = []) {
+    static getKeyByDbKey(map, dbKeyValue) {
+        const key = Array.from(map.keys()).find(key => key.dbKey === dbKeyValue.toLowerCase());
+        return key;
+    };
+
+    static composeProjectDtoFromDatabase(dbProject, dbElements, dbDeletedElementGuids = []) {
         let projectDto = {
             name: dbProject.name,
             code: dbProject.code,
@@ -96,7 +84,7 @@ export class DatabaseModelUtil {
         };
 
         dbElements.forEach(dbElement => {
-            projectDto.elements.push(this.composeElementDtoFromModel(dbElement));
+            projectDto.elements.push(this.composeElementDtoFromDatabase(dbElement));
         });
 
         dbDeletedElementGuids.forEach(dbDeletedElementGuid => {
@@ -106,7 +94,7 @@ export class DatabaseModelUtil {
         return projectDto;
     }
 
-    static composeElementDtoFromModel(dbElement) {
+    static composeElementDtoFromDatabase(dbElement) {
         let elementDto = {
             guid: dbElement.guid,
             projectCode: dbElement.projectCode,
@@ -115,14 +103,10 @@ export class DatabaseModelUtil {
             variation: dbElement.variation,
             modiStamp: dbElement.modiStamp,
             classification: {
-                code: dbElement.classification.code,
-                name: dbElement.classification.name,
-                full: dbElement.classification.full
+                code: (() => dbElement.classification.code.split("__")[0])(),
             },
-            classificationGroup: {
-                code: dbElement.classificationGroup.code,
-                name: dbElement.classificationGroup.name,
-                full: dbElement.classificationGroup.full
+            classificationElementTypeGroup: {
+                code: dbElement.classification.code
             },
             libraryPart: {
                 index: dbElement.libraryPart.index,
@@ -133,32 +117,32 @@ export class DatabaseModelUtil {
             customProperties: {}
         };
 
-        elementDto.classification.full = this.composeClassificationFullName(dbElement.classification);
-        elementDto.classificationGroup.full = this.composeClassificationFullName(dbElement.classificationGroup);
+        let corePropertyGroupMap = getConfigurationCorePropertyMap();
+        let customPropertyGroupMap = getConfigurationCustomPropertyMap();
 
-        let configurationCorePropertyMap = getConfigurationCorePropertyMap();
-        let configurationCustomPropertyMap = getConfigurationCustomPropertyMap();
-
-        configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
-            elementDto.coreProperties[corePtyGpName] = {};
-            corePtyMap.forEach(corePtyName => {
-                elementDto.coreProperties[corePtyGpName][corePtyName] = dbElement.coreProperties[corePtyGpName][corePtyName];
+        corePropertyGroupMap.forEach((corePropertyMap, corePropertyGroup) => {
+            elementDto.coreProperties[corePropertyGroup.xmlKey] = {};
+            corePropertyMap.forEach(coreProperty => {
+                elementDto.coreProperties[corePropertyGroup.xmlKey][coreProperty.xmlKey] = dbElement.coreProperties[corePropertyGroup.dbKey][coreProperty.dbKey];
             });
         });
 
-        if (elementDto.classificationGroup?.full?.length > 0) {
-            const customPropertyGroupName = elementDto.classificationGroup.full;
-            elementDto.customProperties[customPropertyGroupName] = {};
+        if (elementDto.classificationElementTypeGroup.code?.length > 0) {
+            const customPropertyGroup = Array.from(customPropertyGroupMap.keys()).find(key => key.dbKey === elementDto.classificationElementTypeGroup.code.toLowerCase());
 
-            if (configurationCustomPropertyMap.has(customPropertyGroupName)) {
-                configurationCustomPropertyMap.get(customPropertyGroupName).forEach(customPtyName => {
-                    elementDto.customProperties[customPropertyGroupName][customPtyName] = dbElement.customProperties[customPropertyGroupName][customPtyName];
+            if (customPropertyGroup != null) {
+                elementDto.customProperties[customPropertyGroup.xmlKey] = {};
+
+                customPropertyGroupMap.get(customPropertyGroup).forEach(customProperty => {
+                    elementDto.customProperties[customPropertyGroup.xmlKey][customProperty.xmlKey] = dbElement.customProperties?.[customPropertyGroup.dbKey]?.[customProperty.dbKey] ?? null;
                 });
             }
         }
 
         return elementDto;
     }
+
+
 
     static composeClassificationFullName(classificationGroup) {
         if (classificationGroup?.code?.length > 0 && classificationGroup?.name?.length > 0) {

@@ -44,12 +44,10 @@ export class XmlFileUtil {
                 mount: null,
                 modiStamp: select1("@modiStamp", xmlElement)?.value,
                 classification: {
-                    code: select1("@code", select1("classification", xmlElement))?.value,
-                    name: select1("@name", select1("classification", xmlElement))?.value
+                    code: select1("@code", select1("classification", xmlElement))?.value
                 },
-                classificationGroup: {
-                    code: select1("@code", select1("classification-group", xmlElement))?.value,
-                    name: select1("@name", select1("classification-group", xmlElement))?.value
+                classificationElementTypeGroup: {
+                    code: select1("@code", select1("classification-element-type-group", xmlElement))?.value
                 },
                 libraryPart: {
                     index: select1("@index", select1("library-part", xmlElement))?.value,
@@ -65,28 +63,27 @@ export class XmlFileUtil {
                 customProperties: {}
             };
 
-            element.classification.full = (element.classification.code + ' ' + element.classification.name).trim();
-            element.classificationGroup.full = (element.classificationGroup.code + ' ' + element.classificationGroup.name).trim();
-
             let configurationCorePropertyMap = getConfigurationCorePropertyMap();
             let configurationCustomPropertyMap = getConfigurationCustomPropertyMap();
 
             configurationCorePropertyMap.forEach((corePtyMap, corePtyGpName) => {
-                element.coreProperties[corePtyGpName] = {};
+                element.coreProperties[corePtyGpName.dbKey] = {};
                 corePtyMap.forEach(corePtyName => {
-                    const corePtyNode = select1(`core-property-groups/group[@name="${corePtyGpName}"]/property[@name="${corePtyName}"]/@value`, xmlElement);
-                    element.coreProperties[corePtyGpName][corePtyName] = corePtyNode == undefined || corePtyNode == null ? null : corePtyNode.value;
+                    const corePtyNode = select1(`core-property-groups/group[@name="${corePtyGpName.xmlKey}"]/property[@name="${corePtyName.xmlKey}"]/@value`, xmlElement);
+                    element.coreProperties[corePtyGpName.dbKey][corePtyName.dbKey] = corePtyNode == undefined || corePtyNode == null ? null : corePtyNode.value;
                 });
             });
 
-            if (element.classificationGroup.code != null && element.classificationGroup.name != null) {
-                const customPropertyGroupName = `${element.classificationGroup.code} ${element.classificationGroup.name}`;
-                element.customProperties[customPropertyGroupName] = {};
+            if (element.classificationElementTypeGroup.code?.length > 0) {
+                const configurationCustomPropertyGroupKey = this.getKeyByDbKey(configurationCustomPropertyMap, element.classificationElementTypeGroup.code);
 
-                if (configurationCustomPropertyMap.has(customPropertyGroupName)) {
-                    configurationCustomPropertyMap.get(customPropertyGroupName).forEach(customPtyName => {
-                        const customPtyNode = select1(`custom-property-groups/group[@name="${customPropertyGroupName}"]/property[@name="${customPtyName}"]/@value`, xmlElement);
-                        element.customProperties[customPropertyGroupName][customPtyName] = customPtyNode == undefined || customPtyNode == null ? null : customPtyNode.value;
+                if (configurationCustomPropertyGroupKey != null) {
+                    const customPropertyGroupName = configurationCustomPropertyGroupKey.dbKey;
+                    element.customProperties[customPropertyGroupName] = {};
+
+                    configurationCustomPropertyMap.get(configurationCustomPropertyGroupKey).forEach(customPtyName => {
+                        const customPtyNode = select1(`custom-property-groups/group[@name="${configurationCustomPropertyGroupKey.xmlKey}"]/property[@name="${customPtyName.xmlKey}"]/@value`, xmlElement);
+                        element.customProperties[customPropertyGroupName][customPtyName.dbKey] = customPtyNode == undefined || customPtyNode == null ? null : customPtyNode.value;
                     });
                 }
             }
@@ -100,6 +97,16 @@ export class XmlFileUtil {
 
         return projectDto;
     }
+
+    static getKeyByDbKey(map, dbKeyValue) {
+        const key = Array.from(map.keys()).find(key => key.dbKey === dbKeyValue.toLowerCase());
+        return key;
+    };
+
+    static getValueByDbKey(map, dbKeyValue) {
+        const key = Array.from(map.keys()).find(key => key.dbKey === dbKeyValue.toLowerCase());
+        return key ? map.get(key) : undefined;
+    };
 
     static composeXmlObjectFromDto = function (projectDto) {
         let xmlObj = {
@@ -124,8 +131,8 @@ export class XmlFileUtil {
                     "@index": elementDto.libraryPart.index,
                     "@uniqueId": elementDto.libraryPart.uniqueId
                 },
-                classification: { "@code": elementDto.classification.code, "@name": elementDto.classification.name, "@full": elementDto.classification.full },
-                "classification-group": { "@code": elementDto.classificationGroup.code, "@name": elementDto.classificationGroup.name, "@full": elementDto.classificationGroup.full },
+                classification: { "@code": elementDto.classification.code },
+                "classification-element-type-group": { "@code": elementDto.classificationElementTypeGroup.code },
                 "core-property-groups": { group: [] },
                 "custom-property-groups": { group: [] }
             };

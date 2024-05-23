@@ -8,8 +8,6 @@ let configData = null;
 let configXmlDoc = null;
 let configCorePropertyMap = null;
 let configCustomPropertyMap = null;
-let configClassificationOptionMap = null;
-let configClassificationGroupOptionMap = null;
 let configDatabaseConnectionUrl = null;
 let configDatabaseName = null;
 
@@ -23,11 +21,18 @@ export const initializeConfigurations = (projectName) => {
 
     configXmlDoc = new DOMParser().parseFromString(configData, 'text/xml');
 
+    configDatabaseConnectionUrl = select1("/configuration/database-connection/@url", configXmlDoc).value;
+    configDatabaseName = select1("/configuration/database-connection/@name", configXmlDoc).value;
+
     configCorePropertyMap = select("/configuration/property-groups/core", configXmlDoc).map(corePtyGpNode => {
         return {
-            key: select1("@name", corePtyGpNode).value,
+            key: {
+                dbKey: select1("@database-name", corePtyGpNode).value, xmlKey: select1("@name", corePtyGpNode).value
+            },
             value: select("property", corePtyGpNode).map(corePtyNode => {
-                return select1("@name", corePtyNode).value;
+                return {
+                    dbKey: select1("@database-name", corePtyNode).value, xmlKey: select1("@name", corePtyNode).value
+                };
             })
         };
     }).reduce((acc, cur) => {
@@ -37,9 +42,13 @@ export const initializeConfigurations = (projectName) => {
 
     configCustomPropertyMap = select("/configuration/property-groups/custom", configXmlDoc).map(customPtyGpNode => {
         return {
-            key: select1("@name", customPtyGpNode).value,
+            key: {
+                dbKey: select1("@database-name", customPtyGpNode).value, xmlKey: select1("@name", customPtyGpNode).value
+            },
             value: select("property", customPtyGpNode).map(customPtyNode => {
-                return select1("@name", customPtyNode).value;
+                return {
+                    dbKey: select1("@database-name", customPtyNode).value, xmlKey: select1("@name", customPtyNode).value
+                }
             })
         };
     }).reduce((acc, cur) => {
@@ -47,28 +56,7 @@ export const initializeConfigurations = (projectName) => {
         return acc;
     }, new Map());
 
-    configClassificationOptionMap = select("/configuration/classification-options/classification", configXmlDoc).map(optionNode => {
-        return {
-            key: select1("@code", optionNode).value,
-            value: select1("@name", optionNode).value
-        };
-    }).reduce((acc, cur) => {
-        acc.set(cur.key, cur.value);
-        return acc;
-    }, new Map());
 
-    configClassificationGroupOptionMap = select("/configuration/classification-group-options/classification", configXmlDoc).map(optionNode => {
-        return {
-            key: select1("@code", optionNode).value,
-            value: select1("@name", optionNode).value
-        };
-    }).reduce((acc, cur) => {
-        acc.set(cur.key, cur.value);
-        return acc;
-    }, new Map());
-
-    configDatabaseConnectionUrl = select1("/configuration/database-connection/@url", configXmlDoc).value;
-    configDatabaseName = select1("/configuration/database-connection/@name", configXmlDoc).value;
 }
 
 export const getConfigurationCorePropertyMap = () => {
@@ -77,14 +65,6 @@ export const getConfigurationCorePropertyMap = () => {
 
 export const getConfigurationCustomPropertyMap = () => {
     return configCustomPropertyMap;
-}
-
-export const getConfigurationClassificationOptionMap = () => {
-    return configClassificationOptionMap;
-}
-
-export const getConfigurationClassificationGroupOptionMap = () => {
-    return configClassificationGroupOptionMap;
 }
 
 export const getDatabaseConnectionUrl = () => {
