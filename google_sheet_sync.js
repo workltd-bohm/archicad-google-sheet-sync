@@ -133,6 +133,7 @@ async function main(args) {
 
                 if (dbElement.name != elementDtoFromFile.name) {
                     dbElement.name = elementDtoFromFile.name;
+                    dbElement.libraryPart = elementDtoFromFile.libraryPart;
                     await dbService.replaceOne("elements", { guid: elementDtoFromFile.guid, projectCode: dbProject.code }, dbElement);
                     logger.info(`Element [${dbElement.guid}] has been updated in the database.`);
                 }
