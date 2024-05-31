@@ -5,6 +5,44 @@ import { select, select1 } from 'xpath';
 import { getConfigurationCorePropertyMap, getConfigurationCustomPropertyMap } from "./config.js";
 
 export class XmlFileUtil {
+    static patchQuotesInXPath(value) {
+        const parts = [''];
+        let currentPart = [];
+
+        // Iterate over each character in the string
+        for (let char of value) {
+            if (char === '"' || char === "'") {
+                // When encountering a quote, save the current part and the quote separately
+                if (currentPart.length > 0) {
+                    parts.push(currentPart.join(''));
+                    currentPart = [];
+                }
+                parts.push(char);
+            } else {
+                // Otherwise, continue adding to the current part
+                currentPart.push(char);
+            }
+        }
+
+        // Add the last part if it exists
+        if (currentPart.length > 0) {
+            parts.push(currentPart.join(''));
+        }
+
+        // Construct the concat() function parts
+        const concatParts = parts.map(part => {
+            if (part === '"') {
+                return "'\"'";
+            } else if (part === "'") {
+                return '"\'"';
+            } else {
+                return `'${part}'`;
+            }
+        });
+
+        return `concat(${concatParts.join(', ')})`;
+    }
+
     static composeProjectDtoFromFile(filePath) {
         if (!existsSync(filePath)) {
             console.error("Data file not found");
@@ -82,7 +120,7 @@ export class XmlFileUtil {
                     element.customProperties[customPropertyGroupName] = {};
 
                     configurationCustomPropertyMap.get(configurationCustomPropertyGroupKey).forEach(customPtyName => {
-                        const customPtyNode = select1(`custom-property-groups/group[@name="${configurationCustomPropertyGroupKey.xmlKey}"]/property[@name="${customPtyName.xmlKey}"]/@value`, xmlElement);
+                        const customPtyNode = select1(`custom-property-groups/group[@name=${this.patchQuotesInXPath(configurationCustomPropertyGroupKey.xmlKey)}]/property[@name=${this.patchQuotesInXPath(customPtyName.xmlKey)}]/@value`, xmlElement);
                         element.customProperties[customPropertyGroupName][customPtyName.dbKey] = customPtyNode == undefined || customPtyNode == null ? null : customPtyNode.value;
                     });
                 }
