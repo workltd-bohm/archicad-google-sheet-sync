@@ -123,7 +123,13 @@ export class DatabaseModelUtil {
         corePropertyGroupMap.forEach((corePropertyMap, corePropertyGroup) => {
             elementDto.coreProperties[corePropertyGroup.xmlKey] = {};
             corePropertyMap.forEach(coreProperty => {
-                elementDto.coreProperties[corePropertyGroup.xmlKey][coreProperty.xmlKey] = dbElement.coreProperties[corePropertyGroup.dbKey][coreProperty.dbKey];
+                if (coreProperty.dbKey == "datasheets") {
+                    // console.log(dbElement.coreProperties[corePropertyGroup.dbKey][coreProperty.dbKey]);
+                    elementDto.coreProperties[corePropertyGroup.xmlKey][coreProperty.xmlKey] = dbElement.coreProperties[corePropertyGroup.dbKey][coreProperty.dbKey]?.map(datasheet => datasheet.link).join(" / ");
+                } else {
+                    elementDto.coreProperties[corePropertyGroup.xmlKey][coreProperty.xmlKey] = dbElement.coreProperties[corePropertyGroup.dbKey][coreProperty.dbKey];
+                }
+
             });
         });
 
