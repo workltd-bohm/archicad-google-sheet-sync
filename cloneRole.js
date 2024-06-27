@@ -8,7 +8,7 @@ async function main() {
 
     // Retrieve the file name from the command line arguments.
     const projectName = "Token Bungalow";
-    const newRole = "subContractorElectrical";
+    const newRole = "subContractorCrane";
 
     // Initialize the configuration.
     initializeConfigurations(projectName);
@@ -34,6 +34,7 @@ async function main() {
                 for (const field of fields) {
                     dbPrivilege.fields[field].read = [];
                     dbPrivilege.fields[field].write = [];
+                    dbPrivilege.fields[field].designValidate = [];
                 }
             }
         }

@@ -13,13 +13,13 @@ async function main() {
 
     // Initialize the MongoDB connection.
     /***** PRODUCTION *****/
-    // const dbUrl = "mongodb://bohm-app:FMX4Af79YUNbQQCxK5tC@ec2-3-73-242-63.eu-central-1.compute.amazonaws.com:27017/?authSource=bohm";
-    // const dbName = "bohm";
+    const dbUrl = "mongodb://bohm-app:FMX4Af79YUNbQQCxK5tC@ec2-3-73-242-63.eu-central-1.compute.amazonaws.com:27017/?authSource=bohm";
+    const dbName = "bohm";
     /***** PRODUCTION *****/
 
     /***** DEV *****/
-    const dbUrl = "mongodb://root:K5V4nkT2ye4VEBPGt6NJ@10.0.1.200:27017/";
-    const dbName = "bohm";
+    // const dbUrl = "mongodb://root:K5V4nkT2ye4VEBPGt6NJ@10.0.1.200:27017/";
+    // const dbName = "bohm";
     /***** DEV *****/
 
     // const prodClient = new MongoClient(productionDbUrl);
@@ -35,125 +35,59 @@ async function main() {
     try {
         const dbProject = await db.collection("projects").findOne({ name: projectName });
         const dbElements = await db.collection("elements").find({ projectCode: dbProject.code }).toArray();
+        const dbClassificationTemplates = await db.collection("classificationTemplates").find().toArray();
 
         for (const dbElement of dbElements) {
-            if (dbElement.classification.code == "Ss_25_30_20__02") {
-                dbElement.validation = {
-                    design: {
-                        specification: {
-                            manufacturer: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            productSeries: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            productName: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            productCode: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                                mainContractor: "not_started",
-                            },
-                            datasheets: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                                mainContractor: "not_started",
-                            },
-                            dimensions: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            material: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            finish: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            weight: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            embodiedCarbon: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            objectSpecific: {
-                                architect: "not_started",
-                            },
-                        },
-                        ss_25_30_20__02: {
-                            surfaceArea: {
-                                architect: "not_started",
-                            },
-                            fireRating: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            flameSpreadRequirement: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            "tensileStrength:": {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            uvResistance: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                                mainContractor: "not_started",
-                            },
-                            waterVapourResistanceFactor: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            moistureVapourPermeability: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            airtightness: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            watertightness: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                            },
-                            gasketType: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                                mainContractor: "not_started",
-                            },
-                            gasketGrooveDimensions: {
-                                architect: "not_started",
-                                mechanical: "not_started",
-                                mainContractor: "not_started",
-                            },
-                        }
-                    }
-                }
-                // console.table(JSON.stringify(dbElement.validation, null, 2));
+            
+            if (dbElement.classification.code == "Ss_20_05_15__06") {
+                dbElement.validation.design.specification.dimensions.mainContractor = "not_started";
+                dbElement.validation.design.specification.material.mainContractor = "not_started";
+                dbElement.validation.design.ss_20_05_15__06.maxTemperature.subContractorHeatPump = "not_started";
+
                 await db.collection("elements").replaceOne({ guid: dbElement.guid, projectCode: dbProject.code }, dbElement);
             }
+
+            
+            // dbElement.coreProperties.specification.datasheets = [];
+            
         }
 
-        const dbPrivileges = await db.collection("privileges").find().toArray();
+        // for (const dbElement of dbElements) {
+        //     dbElement.validation = {};
+        //     dbElement.validation.design = {};
+        //     dbElement.validation.design.specification = {};
+            
+        //     for (const key of Object.keys(dbElement.coreProperties.specification)) {
+        //         dbElement.validation.design.specification[key] = {
+        //             architect: "not_started",
+        //         }
+        //     }
 
-        for (const dbPrivilege of dbPrivileges) {
+        //     const dbClassificationTemplate = dbClassificationTemplates.find(dbClassificationTemplate => dbClassificationTemplate.code == dbElement.classification.code);
 
-            for (const key of Object.keys(dbPrivilege.fields)) {
-                dbPrivilege.fields[key].designValidate = dbPrivilege.role == "architect" ? ["*"] : [];
-            }
+        //     if (dbClassificationTemplate) {
+        //         const elementTypeId = dbElement.classification.code[0].toLowerCase() + dbElement.classification.code.slice(1);
+        //         dbElement.validation.design[elementTypeId] = {};
+        //         for (const key of Object.keys(dbClassificationTemplate.template)) {
+        //             dbElement.validation.design[elementTypeId][key] = {
+        //                 architect: "not_started",
+        //             }
+        //         }
+        //     }
+            
+        //     await db.collection("elements").replaceOne({ guid: dbElement.guid, projectCode: dbProject.code }, dbElement);
+        // }
 
-            // await db.collection("privileges").replaceOne({ role: dbPrivilege.role, section: dbPrivilege.section }, dbPrivilege);
-        }
+        // const dbPrivileges = await db.collection("privileges").find().toArray();
 
-        
+        // for (const dbPrivilege of dbPrivileges) {
+
+        //     for (const key of Object.keys(dbPrivilege.fields)) {
+        //         dbPrivilege.fields[key].designValidate = dbPrivilege.role == "architect" ? ["*"] : [];
+        //     }
+
+        //     await db.collection("privileges").replaceOne({ role: dbPrivilege.role, section: dbPrivilege.section }, dbPrivilege);
+        // }
     }
     catch (error) {
         console.error(error);
